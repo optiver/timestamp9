@@ -1,0 +1,5 @@
+# timestamp9 extension
+comment = 'timestamp nanosecond resolution'
+default_version = '0.1.0'
+module_pathname = '$libdir/timestamp9'
+relocatable = true
