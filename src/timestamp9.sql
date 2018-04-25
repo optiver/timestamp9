@@ -1,13 +1,13 @@
-CREATE FUNCTION timestamp9_in(cstring) RETURNS timestamp9 AS
+CREATE OR REPLACE FUNCTION timestamp9_in(cstring) RETURNS timestamp9 AS
 '$libdir/timestamp9'
 LANGUAGE c IMMUTABLE STRICT;
-CREATE FUNCTION timestamp9_out(timestamp9) RETURNS cstring AS
+CREATE OR REPLACE FUNCTION timestamp9_out(timestamp9) RETURNS cstring AS
 '$libdir/timestamp9'
 LANGUAGE c IMMUTABLE STRICT;
-CREATE FUNCTION timestamp9_recv(internal) RETURNS timestamp9 AS
+CREATE OR REPLACE FUNCTION timestamp9_recv(internal) RETURNS timestamp9 AS
 '$libdir/timestamp9'
 LANGUAGE c IMMUTABLE STRICT;
-CREATE FUNCTION timestamp9_send(timestamp9) RETURNS bytea AS
+CREATE OR REPLACE FUNCTION timestamp9_send(timestamp9) RETURNS bytea AS
 '$libdir/timestamp9'
 LANGUAGE c IMMUTABLE STRICT;
 CREATE TYPE timestamp9 (
@@ -21,14 +21,14 @@ CREATE TYPE timestamp9 (
  STORAGE = plain
 );
 
-CREATE FUNCTION timestamp9_to_timestamptz(timestamp9) RETURNS timestamptz AS
+CREATE OR REPLACE FUNCTION timestamp9_to_timestamptz(timestamp9) RETURNS timestamptz AS
 '$libdir/timestamp9'
 LANGUAGE c IMMUTABLE STRICT;
 
 CREATE CAST (timestamp9 AS timestamptz)
 WITH FUNCTION timestamp9_to_timestamptz(timestamp9) AS ASSIGNMENT;
 
-CREATE FUNCTION timestamptz_to_timestamp9(timestamptz) RETURNS timestamp9 AS
+CREATE OR REPLACE FUNCTION timestamptz_to_timestamp9(timestamptz) RETURNS timestamp9 AS
 '$libdir/timestamp9'
 LANGUAGE c IMMUTABLE STRICT;
 
@@ -36,12 +36,27 @@ CREATE CAST (timestamptz AS timestamp9)
 WITH FUNCTION timestamptz_to_timestamp9(timestamptz) AS IMPLICIT;
 
 
+CREATE OR REPLACE FUNCTION timestamp9_to_timestamp(timestamp9) RETURNS timestamp AS
+'$libdir/timestamp9'
+LANGUAGE c IMMUTABLE STRICT;
+
+CREATE CAST (timestamp9 AS timestamp)
+WITH FUNCTION timestamp9_to_timestamp(timestamp9) AS ASSIGNMENT;
+
+CREATE OR REPLACE FUNCTION timestamp_to_timestamp9(timestamp) RETURNS timestamp9 AS
+'$libdir/timestamp9'
+LANGUAGE c IMMUTABLE STRICT;
+
+CREATE CAST (timestamp AS timestamp9)
+WITH FUNCTION timestamp_to_timestamp9(timestamp) AS IMPLICIT;
+
+
 CREATE CAST (timestamp9 AS bigint)
 WITHOUT FUNCTION AS IMPLICIT;
 CREATE CAST (bigint AS timestamp9)
 WITHOUT FUNCTION AS ASSIGNMENT;
 
-CREATE FUNCTION timestamp9_lt(timestamp9, timestamp9) RETURNS bool AS
+CREATE OR REPLACE FUNCTION timestamp9_lt(timestamp9, timestamp9) RETURNS bool AS
 'MODULE_PATHNAME'
 LANGUAGE c IMMUTABLE STRICT;
 CREATE OPERATOR < (
@@ -54,7 +69,7 @@ CREATE OPERATOR < (
 	JOIN = scalarltjoinsel
 );
 
-CREATE FUNCTION timestamp9_le(timestamp9, timestamp9) RETURNS bool AS
+CREATE OR REPLACE FUNCTION timestamp9_le(timestamp9, timestamp9) RETURNS bool AS
 'MODULE_PATHNAME'
 LANGUAGE c IMMUTABLE STRICT;
 CREATE OPERATOR <= (
@@ -67,7 +82,7 @@ CREATE OPERATOR <= (
 	JOIN = scalarltjoinsel
 );
 
-CREATE FUNCTION timestamp9_gt(timestamp9, timestamp9) RETURNS bool AS
+CREATE OR REPLACE FUNCTION timestamp9_gt(timestamp9, timestamp9) RETURNS bool AS
 'MODULE_PATHNAME'
 LANGUAGE c IMMUTABLE STRICT;
 CREATE OPERATOR > (
@@ -80,7 +95,7 @@ CREATE OPERATOR > (
 	JOIN = scalargtjoinsel
 );
 
-CREATE FUNCTION timestamp9_ge(timestamp9, timestamp9) RETURNS bool AS
+CREATE OR REPLACE FUNCTION timestamp9_ge(timestamp9, timestamp9) RETURNS bool AS
 'MODULE_PATHNAME'
 LANGUAGE c IMMUTABLE STRICT;
 CREATE OPERATOR >= (
@@ -93,7 +108,7 @@ CREATE OPERATOR >= (
 	JOIN = scalargtjoinsel
 );
 
-CREATE FUNCTION timestamp9_eq(timestamp9, timestamp9) RETURNS bool AS
+CREATE OR REPLACE FUNCTION timestamp9_eq(timestamp9, timestamp9) RETURNS bool AS
 'MODULE_PATHNAME'
 LANGUAGE c IMMUTABLE STRICT;
 CREATE OPERATOR = (
@@ -108,7 +123,7 @@ CREATE OPERATOR = (
 	MERGES
 );
 
-CREATE FUNCTION timestamp9_ne(timestamp9, timestamp9) RETURNS bool AS
+CREATE OR REPLACE FUNCTION timestamp9_ne(timestamp9, timestamp9) RETURNS bool AS
 'MODULE_PATHNAME'
 LANGUAGE c IMMUTABLE STRICT;
 CREATE OPERATOR <> (
@@ -122,7 +137,7 @@ CREATE OPERATOR <> (
 	MERGES
 );
 
-CREATE FUNCTION bt_timestamp9_cmp(timestamp9, timestamp9) RETURNS int AS
+CREATE OR REPLACE FUNCTION bt_timestamp9_cmp(timestamp9, timestamp9) RETURNS int AS
 'MODULE_PATHNAME'
 LANGUAGE c IMMUTABLE STRICT;
 

@@ -34,5 +34,7 @@ extern Datum bt_timestamp9_cmp(PG_FUNCTION_ARGS);
 
 extern Datum timestamp9_to_timestamptz(PG_FUNCTION_ARGS);
 extern Datum timestamptz_to_timestamp9(PG_FUNCTION_ARGS);
+extern Datum timestamp9_to_timestamp(PG_FUNCTION_ARGS);
+extern Datum timestamp_to_timestamp9(PG_FUNCTION_ARGS);
 }
 
