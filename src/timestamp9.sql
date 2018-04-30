@@ -52,9 +52,9 @@ WITH FUNCTION timestamp_to_timestamp9(timestamp) AS IMPLICIT;
 
 
 CREATE CAST (timestamp9 AS bigint)
-WITHOUT FUNCTION AS IMPLICIT;
-CREATE CAST (bigint AS timestamp9)
 WITHOUT FUNCTION AS ASSIGNMENT;
+CREATE CAST (bigint AS timestamp9)
+WITHOUT FUNCTION AS IMPLICIT;
 
 CREATE OR REPLACE FUNCTION timestamp9_lt(timestamp9, timestamp9) RETURNS bool AS
 'MODULE_PATHNAME'
