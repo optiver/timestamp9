@@ -10,6 +10,7 @@ extern "C" {
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
+#include "utils/date.h"
 #include "utils/datetime.h"
 #include "pgtime.h"
 }
@@ -40,6 +41,8 @@ PG_FUNCTION_INFO_V1(timestamp9_to_timestamptz);
 PG_FUNCTION_INFO_V1(timestamptz_to_timestamp9);
 PG_FUNCTION_INFO_V1(timestamp9_to_timestamp);
 PG_FUNCTION_INFO_V1(timestamp_to_timestamp9);
+PG_FUNCTION_INFO_V1(timestamp9_to_date);
+PG_FUNCTION_INFO_V1(date_to_timestamp9);
 }
 
 /*****************************************************************************
@@ -51,6 +54,59 @@ PG_FUNCTION_INFO_V1(timestamp_to_timestamp9);
 
 namespace
 {
+
+TimestampTz
+timestamp9_to_timestamptz(timestamp9 ts9)
+{
+	auto us = ts9 / 1000;
+	us -= ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
+
+	/* Recheck in case roundoff produces something just out of range */
+	if (!IS_VALID_TIMESTAMP(us))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					errmsg("timestamp9 out of range: \"%lld\"",
+						   ts9)));
+	return us;
+}
+
+timestamp9
+date2timestamp9(DateADT dateVal)
+{
+	timestamp9 result;
+	struct pg_tm tt,
+		*tm = &tt;
+	int			tz;
+
+	if (DATE_IS_NOBEGIN(dateVal) || DATE_IS_NOEND(dateVal))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					errmsg("date out of range for timestamp")));
+	else
+	{
+		/*
+		 * Date's range is wider than timestamp's, so check for boundaries.
+		 * Since dates have the same minimum values as timestamps, only upper
+		 * boundary need be checked for overflow.
+		 */
+		if (dateVal >= (TIMESTAMP9_END_JULIAN - UNIX_EPOCH_JDATE))
+			ereport(ERROR,
+					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+						errmsg("date out of range for timestamp")));
+
+		j2date(dateVal + POSTGRES_EPOCH_JDATE,
+			   &(tm->tm_year), &(tm->tm_mon), &(tm->tm_mday));
+		tm->tm_hour = 0;
+		tm->tm_min = 0;
+		tm->tm_sec = 0;
+		tz = DetermineTimeZoneOffset(tm, session_timezone);
+
+		result = dateVal * USECS_PER_DAY * kT_ns_in_us + tz * USECS_PER_SEC * kT_ns_in_us +
+			(POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * USECS_PER_DAY * kT_ns_in_us;
+	}
+
+	return result;
+}
 
 TimestampTz
 timestamp2timestamptz(Timestamp timestamp)
@@ -285,17 +341,7 @@ bt_timestamp9_cmp(PG_FUNCTION_ARGS)
 Datum timestamp9_to_timestamptz(PG_FUNCTION_ARGS)
 {
 	auto ts9 = PG_GETARG_TIMESTAMP9(0);
-	auto us = ts9 / 1000;
-	us -= ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
-
-	/* Recheck in case roundoff produces something just out of range */
-	if (!IS_VALID_TIMESTAMP(us))
-		ereport(ERROR,
-				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-				 errmsg("timestamp9 out of range: \"%lld\"",
-						PG_GETARG_TIMESTAMP9(0))));
-
-
+	auto us = timestamp9_to_timestamptz(ts9);
 	PG_RETURN_TIMESTAMPTZ(us);
 }
 
@@ -333,4 +379,31 @@ Datum timestamp_to_timestamp9(PG_FUNCTION_ARGS)
 	auto ns = ts * 1000;
 
 	PG_RETURN_TIMESTAMP9(ns);
+}
+
+Datum timestamp9_to_date(PG_FUNCTION_ARGS)
+{
+	auto ts9 = PG_GETARG_TIMESTAMP9(0);
+	auto timestamp = timestamp9_to_timestamptz(ts9);
+	DateADT		result;
+	struct pg_tm tt,
+		*tm = &tt;
+	fsec_t		fsec;
+	int			tz;
+
+	if (timestamp2tm(timestamp, &tz, tm, &fsec, NULL, NULL) != 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					errmsg("timestamp out of range")));
+
+	result = date2j(tm->tm_year, tm->tm_mon, tm->tm_mday) - POSTGRES_EPOCH_JDATE;
+
+	PG_RETURN_DATEADT(result);
+}
+
+Datum date_to_timestamp9(PG_FUNCTION_ARGS)
+{
+	auto date = PG_GETARG_DATEADT(0);
+	auto ts = date2timestamp9(date);
+	PG_RETURN_TIMESTAMP9(ts);
 }

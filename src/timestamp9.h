@@ -10,11 +10,13 @@ extern "C" {
 
 typedef long long timestamp9;
 
-#define DatumGetTimestamp9(X) ((timestamp9) GET_8_BYTES(X))
-#define Timestamp9GetDatum(X) ((Datum) SET_8_BYTES(X))
+#define DatumGetTimestamp9(X) ((timestamp9) (X))
+#define Timestamp9GetDatum(X) ((Datum) (X))
 
 #define PG_GETARG_TIMESTAMP9(n)	DatumGetTimestamp9(PG_GETARG_DATUM(n))
 #define PG_RETURN_TIMESTAMP9(x)	return Timestamp9GetDatum(x)
+
+#define TIMESTAMP9_END_JULIAN (2547238)	/* == date2j(2262, 1, 1) */
 
 extern "C" {
 
@@ -36,5 +38,7 @@ extern Datum timestamp9_to_timestamptz(PG_FUNCTION_ARGS);
 extern Datum timestamptz_to_timestamp9(PG_FUNCTION_ARGS);
 extern Datum timestamp9_to_timestamp(PG_FUNCTION_ARGS);
 extern Datum timestamp_to_timestamp9(PG_FUNCTION_ARGS);
+extern Datum timestamp9_to_date(PG_FUNCTION_ARGS);
+extern Datum date_to_timestamp9(PG_FUNCTION_ARGS);
 }
 
