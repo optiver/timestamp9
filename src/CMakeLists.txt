@@ -69,10 +69,17 @@ set(INSTALL_FILE ${PROJECT_NAME}--${PROJECT_VERSION_MOD}.sql)
 cat_files("timestamp9.sql" ${CMAKE_CURRENT_BINARY_DIR}/${INSTALL_FILE})
 add_custom_target(sqlfile ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${INSTALL_FILE})
 
+set(MOD_FILES
+        timestamp9--0.1.0--0.2.0.sql
+        )
+
+add_custom_target(sqlupdatescripts ALL DEPENDS ${MOD_FILES})
+
 install(
   TARGETS ${PROJECT_NAME}
   DESTINATION ${PG_PKGLIBDIR})
 
 install(
   FILES ${CMAKE_CURRENT_BINARY_DIR}/${INSTALL_FILE}
+        ${MOD_FILES}
   DESTINATION "${PG_SHAREDIR}/extension")
