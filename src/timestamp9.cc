@@ -261,7 +261,7 @@ timestamp9_out(PG_FUNCTION_ARGS)
   tm tm_;
   localtime_r(&secs, &tm_);
   size_t offset = strftime(result, 41, "%Y-%m-%d %H:%M:%S", &tm_);
-  offset += sprintf(result + offset, ".%llu", (arg1 % kT_ns_in_s));
+  offset += sprintf(result + offset, ".%09llu", (arg1 % kT_ns_in_s));
   offset += strftime(result + offset, 41, " %z", &tm_);
   
 	PG_RETURN_CSTRING(result);
