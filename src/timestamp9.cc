@@ -184,6 +184,9 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	int			ftype[MAXDATEFIELDS];
 	char		lowstr[MAXDATELEN + MAXDATEFIELDS];
 	char	   *realptr;
+	long long ratio;
+	int i = 0;
+	bool count = false, fractional_valid = false;
 
 	if (strlen(str) > MAXDATELEN)
 	{
@@ -193,8 +196,27 @@ timestamp9_in(PG_FUNCTION_ARGS)
 						   )));
 	}
 
+	ratio = 1000000000ll;
+	i = 0;
+	while (str[i] != '\0')
+	{
+		if (count && str[i] == ' ')
+		{
+			fractional_valid = ratio > 0;
+			break;
+		}
+
+		if (count)
+			ratio /= 10;
+
+		if (str[i] == '.')
+			count = true;
+		i++;
+	}
+
 	if (ParseDateTime(str, lowstr, MAXDATELEN + MAXDATEFIELDS, field, ftype, MAXDATEFIELDS, &nf) != 0 ||
 		DecodeDateTime(field, ftype, nf, &dtype, p_tm, &fsec, &tz) != 0 ||
+		fractional_valid ||
 		fsec != 0)
 	{
 		tm tm_{};
@@ -202,7 +224,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		char plusmin;
 		int gmt_offset;
 		int num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %c%d", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, &plusmin, &gmt_offset);
-		if (num_read == 9)
+		if (num_read == 9 && fractional_valid)
 		{
 			tm_.tm_year -= 1900;
 			tm_.tm_mon--;
@@ -211,7 +233,8 @@ timestamp9_in(PG_FUNCTION_ARGS)
 				gmt_offset = -gmt_offset;
 			auto tt = timegm(&tm_);
 			tt = tt + tm_.tm_gmtoff - gmt_offset;
-			result = (long long)tt * kT_ns_in_s + (ns % kT_ns_in_s);
+
+			result = (long long)tt * kT_ns_in_s + (ns * ratio);
 		}
 		else
 		{
@@ -257,13 +280,13 @@ timestamp9_out(PG_FUNCTION_ARGS)
 	timestamp9		arg1 = PG_GETARG_TIMESTAMP9(0);
 	char	   *result = (char *) palloc(41);	/* sign, 3 digits, '\0' */
 
-  time_t secs = (time_t)(arg1 / kT_ns_in_s);
-  tm tm_;
-  localtime_r(&secs, &tm_);
-  size_t offset = strftime(result, 41, "%Y-%m-%d %H:%M:%S", &tm_);
-  offset += sprintf(result + offset, ".%09llu", (arg1 % kT_ns_in_s));
-  offset += strftime(result + offset, 41, " %z", &tm_);
-  
+	time_t secs = (time_t)(arg1 / kT_ns_in_s);
+	tm tm_;
+	localtime_r(&secs, &tm_);
+	size_t offset = strftime(result, 41, "%Y-%m-%d %H:%M:%S", &tm_);
+	offset += sprintf(result + offset, ".%09llu", (arg1 % kT_ns_in_s));
+	offset += strftime(result + offset, 41, " %z", &tm_);
+
 	PG_RETURN_CSTRING(result);
 }
 
