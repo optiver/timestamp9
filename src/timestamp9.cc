@@ -43,6 +43,13 @@ PG_FUNCTION_INFO_V1(timestamp9_to_timestamp);
 PG_FUNCTION_INFO_V1(timestamp_to_timestamp9);
 PG_FUNCTION_INFO_V1(timestamp9_to_date);
 PG_FUNCTION_INFO_V1(date_to_timestamp9);
+
+PG_FUNCTION_INFO_V1(timestamp9_larger);
+PG_FUNCTION_INFO_V1(timestamp9_smaller);
+PG_FUNCTION_INFO_V1(timestamp9_interval_pl);
+PG_FUNCTION_INFO_V1(interval_timestamp9_pl);
+PG_FUNCTION_INFO_V1(timestamp9_interval_mi);
+
 }
 
 /*****************************************************************************
@@ -55,8 +62,101 @@ PG_FUNCTION_INFO_V1(date_to_timestamp9);
 namespace
 {
 
+/* timestamptz_pl_interval()
+ * Add an interval to a timestamp with time zone data type.
+ * Note that interval has provisions for qualitative year/month
+ *	units, so try to do the right thing with them.
+ * To add a month, increment the month, and use the same day of month.
+ * Then, if the next month has fewer days, set the day of month
+ *	to the last day of month.
+ * Lastly, add in the "quantitative time".
+ *
+ * Copied from pg source code as it's inaccessible for extensions
+ */
 TimestampTz
-timestamp9_to_timestamptz(timestamp9 ts9)
+timestamptz_pl_interval(TimestampTz timestamp, Interval* span)
+{
+	TimestampTz result;
+	int			tz;
+
+	if (TIMESTAMP_NOT_FINITE(timestamp))
+		result = timestamp;
+	else
+	{
+		if (span->month != 0)
+		{
+			struct pg_tm tt,
+				*tm = &tt;
+			fsec_t		fsec;
+
+			if (timestamp2tm(timestamp, &tz, tm, &fsec, NULL, NULL) != 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+							errmsg("timestamp out of range")));
+
+			tm->tm_mon += span->month;
+			if (tm->tm_mon > MONTHS_PER_YEAR)
+			{
+				tm->tm_year += (tm->tm_mon - 1) / MONTHS_PER_YEAR;
+				tm->tm_mon = ((tm->tm_mon - 1) % MONTHS_PER_YEAR) + 1;
+			}
+			else if (tm->tm_mon < 1)
+			{
+				tm->tm_year += tm->tm_mon / MONTHS_PER_YEAR - 1;
+				tm->tm_mon = tm->tm_mon % MONTHS_PER_YEAR + MONTHS_PER_YEAR;
+			}
+
+			/* adjust for end of month boundary problems... */
+			if (tm->tm_mday > day_tab[isleap(tm->tm_year)][tm->tm_mon - 1])
+				tm->tm_mday = (day_tab[isleap(tm->tm_year)][tm->tm_mon - 1]);
+
+			tz = DetermineTimeZoneOffset(tm, session_timezone);
+
+			if (tm2timestamp(tm, fsec, &tz, &timestamp) != 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+							errmsg("timestamp out of range")));
+		}
+
+		if (span->day != 0)
+		{
+			struct pg_tm tt,
+				*tm = &tt;
+			fsec_t		fsec;
+			int			julian;
+
+			if (timestamp2tm(timestamp, &tz, tm, &fsec, NULL, NULL) != 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+							errmsg("timestamp out of range")));
+
+			/* Add days by converting to and from Julian */
+			julian = date2j(tm->tm_year, tm->tm_mon, tm->tm_mday) + span->day;
+			j2date(julian, &tm->tm_year, &tm->tm_mon, &tm->tm_mday);
+
+			tz = DetermineTimeZoneOffset(tm, session_timezone);
+
+			if (tm2timestamp(tm, fsec, &tz, &timestamp) != 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+							errmsg("timestamp out of range")));
+		}
+
+		timestamp += span->time;
+
+		if (!IS_VALID_TIMESTAMP(timestamp))
+			ereport(ERROR,
+					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+						errmsg("timestamp out of range")));
+
+		result = timestamp;
+	}
+
+	PG_RETURN_TIMESTAMP(result);
+}
+
+TimestampTz
+timestamp9_to_timestamptz_internal(timestamp9 ts9)
 {
 	auto us = ts9 / 1000;
 	us -= ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
@@ -68,6 +168,14 @@ timestamp9_to_timestamptz(timestamp9 ts9)
 					errmsg("timestamp9 out of range: \"%lld\"",
 						   ts9)));
 	return us;
+}
+
+timestamp9
+timestamptz_to_timestamp9_internal(TimestampTz ts)
+{
+	ts += ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
+	auto ns = ts * 1000;
+	return ns;
 }
 
 timestamp9
@@ -380,15 +488,14 @@ bt_timestamp9_cmp(PG_FUNCTION_ARGS)
 Datum timestamp9_to_timestamptz(PG_FUNCTION_ARGS)
 {
 	auto ts9 = PG_GETARG_TIMESTAMP9(0);
-	auto us = timestamp9_to_timestamptz(ts9);
+	auto us = timestamp9_to_timestamptz_internal(ts9);
 	PG_RETURN_TIMESTAMPTZ(us);
 }
 
 Datum timestamptz_to_timestamp9(PG_FUNCTION_ARGS)
 {
 	auto ts = PG_GETARG_TIMESTAMPTZ(0);
-	ts += ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
-	auto ns = ts * 1000;
+	auto ns = timestamptz_to_timestamp9_internal(ts);
 	
 	PG_RETURN_TIMESTAMP9(ns);
 }
@@ -423,7 +530,7 @@ Datum timestamp_to_timestamp9(PG_FUNCTION_ARGS)
 Datum timestamp9_to_date(PG_FUNCTION_ARGS)
 {
 	auto ts9 = PG_GETARG_TIMESTAMP9(0);
-	auto timestamp = timestamp9_to_timestamptz(ts9);
+	auto timestamp = timestamp9_to_timestamptz_internal(ts9);
 	DateADT		result;
 	struct pg_tm tt,
 		*tm = &tt;
@@ -440,9 +547,67 @@ Datum timestamp9_to_date(PG_FUNCTION_ARGS)
 	PG_RETURN_DATEADT(result);
 }
 
+
 Datum date_to_timestamp9(PG_FUNCTION_ARGS)
 {
 	auto date = PG_GETARG_DATEADT(0);
 	auto ts = date2timestamp9(date);
 	PG_RETURN_TIMESTAMP9(ts);
+}
+
+Datum timestamp9_larger(PG_FUNCTION_ARGS)
+{
+	auto a = PG_GETARG_TIMESTAMP9(0);
+	auto b = PG_GETARG_TIMESTAMP9(1);
+	if (a > b)
+		PG_RETURN_TIMESTAMP9(a);
+	else
+		PG_RETURN_TIMESTAMP9(b);
+}
+
+Datum timestamp9_smaller(PG_FUNCTION_ARGS)
+{
+	auto a = PG_GETARG_TIMESTAMP9(0);
+	auto b = PG_GETARG_TIMESTAMP9(1);
+	if (a < b)
+		PG_RETURN_TIMESTAMP9(a);
+	else
+		PG_RETURN_TIMESTAMP9(b);
+}
+
+Datum timestamp9_interval_pl(PG_FUNCTION_ARGS)
+{
+	auto ts = PG_GETARG_TIMESTAMP9(0);
+	auto intvl = PG_GETARG_INTERVAL_P(1);
+
+	auto tstz = timestamp9_to_timestamptz_internal(ts);
+	auto new_ts = timestamptz_to_timestamp9_internal(timestamptz_pl_interval(tstz, intvl));
+	new_ts += ts % 1000;
+	PG_RETURN_TIMESTAMP9(new_ts);
+}
+
+Datum interval_timestamp9_pl(PG_FUNCTION_ARGS)
+{
+	auto intvl = PG_GETARG_INTERVAL_P(0);
+	auto ts = PG_GETARG_TIMESTAMP9(1);
+
+	auto tstz = timestamp9_to_timestamptz_internal(ts);
+	auto new_ts = timestamptz_to_timestamp9_internal(timestamptz_pl_interval(tstz, intvl));
+	new_ts += ts % 1000;
+	PG_RETURN_TIMESTAMP9(new_ts);
+}
+
+Datum timestamp9_interval_mi(PG_FUNCTION_ARGS)
+{
+	auto ts = PG_GETARG_TIMESTAMP9(0);
+	auto intvl = PG_GETARG_INTERVAL_P(1);
+	Interval tspan;
+	tspan.month = -intvl->month;
+	tspan.day = -intvl->day;
+	tspan.time = -intvl->time;
+
+	auto tstz = timestamp9_to_timestamptz_internal(ts);
+	auto new_ts = timestamptz_to_timestamp9_internal(timestamptz_pl_interval(tstz, &tspan));
+	new_ts += ts % 1000;
+	PG_RETURN_TIMESTAMP9(new_ts);
 }

@@ -40,5 +40,11 @@ extern Datum timestamp9_to_timestamp(PG_FUNCTION_ARGS);
 extern Datum timestamp_to_timestamp9(PG_FUNCTION_ARGS);
 extern Datum timestamp9_to_date(PG_FUNCTION_ARGS);
 extern Datum date_to_timestamp9(PG_FUNCTION_ARGS);
-}
 
+extern Datum timestamp9_larger(PG_FUNCTION_ARGS);
+extern Datum timestamp9_smaller(PG_FUNCTION_ARGS);
+extern Datum timestamp9_interval_pl(PG_FUNCTION_ARGS);
+extern Datum interval_timestamp9_pl(PG_FUNCTION_ARGS);
+extern Datum timestamp9_interval_mi(PG_FUNCTION_ARGS);
+
+}
