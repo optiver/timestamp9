@@ -187,8 +187,11 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	long long ratio;
 	int i = 0;
 	bool count = false, fractional_valid = false;
+	size_t len = strlen(str);
+	int parsed_length;
+	long long ns;
 
-	if (strlen(str) > MAXDATELEN)
+	if (len > MAXDATELEN)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
@@ -196,9 +199,20 @@ timestamp9_in(PG_FUNCTION_ARGS)
 						   )));
 	}
 
+	// first try the raw nanosecond bigint format: eg. 1554809728000100000
+	if(sscanf(str, "%lld%n", &ns, &parsed_length) == 1)
+	{
+		if (parsed_length == len)
+		{
+			PG_RETURN_TIMESTAMP9(ns);
+		}
+	}
+
+	// determine the number of digits for fractional seconds (after '.' and before ' ') in 2019-04-09 13:35:28.000100000 +0200
+	// we need this to determine if postres standard non-fractional parsing is correct
 	ratio = 1000000000ll;
 	i = 0;
-	while (str[i] != '\0')
+	while (i < len)
 	{
 		if (count && str[i] == ' ')
 		{
@@ -214,11 +228,13 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		i++;
 	}
 
+	// first try postgres parsing of non-fractional second timestamp (to allow greater flexibility)
 	if (ParseDateTime(str, lowstr, MAXDATELEN + MAXDATEFIELDS, field, ftype, MAXDATEFIELDS, &nf) != 0 ||
 		DecodeDateTime(field, ftype, nf, &dtype, p_tm, &fsec, &tz) != 0 ||
 		fractional_valid ||
 		fsec != 0)
 	{
+		// it doesn't work - try our own parsing then
 		tm tm_{};
 		long long ns;
 		char plusmin;
