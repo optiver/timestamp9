@@ -1,12 +1,9 @@
 
 #pragma once
 
-extern "C" {
-
 #include <ctype.h>
 #include "fmgr.h"
-
-}
+#include "postgres.h"
 
 typedef long long timestamp9;
 
@@ -17,8 +14,6 @@ typedef long long timestamp9;
 #define PG_RETURN_TIMESTAMP9(x)	return Timestamp9GetDatum(x)
 
 #define TIMESTAMP9_END_JULIAN (2547238)	/* == date2j(2262, 1, 1) */
-
-extern "C" {
 
 extern Datum timestamp9_in(PG_FUNCTION_ARGS);
 extern Datum timestamp9_out(PG_FUNCTION_ARGS);
@@ -46,5 +41,3 @@ extern Datum timestamp9_smaller(PG_FUNCTION_ARGS);
 extern Datum timestamp9_interval_pl(PG_FUNCTION_ARGS);
 extern Datum interval_timestamp9_pl(PG_FUNCTION_ARGS);
 extern Datum timestamp9_interval_mi(PG_FUNCTION_ARGS);
-
-}
