@@ -210,7 +210,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	 * we need this to determine if postres standard non-fractional parsing is correct
 	 */
 	ratio = parse_fractional_ratio(str, len);
-	fractional_valid = ratio > 0;
+	fractional_valid = (ratio > 0);
 
 	/* first try postgres parsing of non-fractional second timestamp (to allow greater flexibility) */
 	if (ParseDateTime(str, lowstr, MAXDATELEN + MAXDATEFIELDS, field, ftype, MAXDATEFIELDS, &nf) != 0 ||
