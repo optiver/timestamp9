@@ -184,8 +184,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	int ftype[MAXDATEFIELDS];
 	char lowstr[MAXDATELEN + MAXDATEFIELDS];
 	long long ratio;
-	size_t i = 0;
-	bool count = false, fractional_valid = false;
+	bool fractional_valid = false;
 	size_t len = strlen(str);
 	int parsed_length;
 	long long ns;
@@ -210,23 +209,8 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	/* determine the number of digits for fractional seconds (after '.' and before ' ') in 2019-04-09 13:35:28.000100000 +0200
 	 * we need this to determine if postres standard non-fractional parsing is correct
 	 */
-	ratio = 1000000000ll;
-	i = 0;
-	while (i < len)
-	{
-		if (count && str[i] == ' ')
-		{
-			fractional_valid = ratio > 0;
-			break;
-		}
-
-		if (count)
-			ratio /= 10;
-
-		if (str[i] == '.')
-			count = true;
-		i++;
-	}
+	ratio = parse_fractional_ratio(str, len);
+	fractional_valid = ratio > 0;
 
 	/* first try postgres parsing of non-fractional second timestamp (to allow greater flexibility) */
 	if (ParseDateTime(str, lowstr, MAXDATELEN + MAXDATEFIELDS, field, ftype, MAXDATEFIELDS, &nf) != 0 ||
@@ -299,6 +283,28 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	}
 
 	PG_RETURN_TIMESTAMP9(result);
+}
+
+long long parse_fractional_ratio(const char* str, size_t len)
+{
+	bool count = false;
+	long long ratio = 1000000000ll;
+	size_t i = 0;
+	while (i < len)
+	{
+		if (count && (str[i] == ' ' || str[i] == '+' || str[i] == '-'))
+		{
+			break;
+		}
+
+		if (count)
+			ratio /= 10;
+
+		if (str[i] == '.')
+			count = true;
+		i++;
+	}
+	return ratio;
 }
 
 int parse_gmt_offset(const char * str, bool * valid)
