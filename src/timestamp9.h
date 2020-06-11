@@ -44,4 +44,4 @@ extern Datum timestamp9_interval_mi(PG_FUNCTION_ARGS);
 
 int parse_gmt_offset(const char*, bool*);
 
-long long parse_fractional_ratio(const char*, size_t);
+long long parse_fractional_ratio(const char*, size_t, bool*);

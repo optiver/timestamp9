@@ -209,8 +209,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		}
 	}
 
-	ratio = parse_fractional_ratio(str, len);
-	fractional_valid = (ratio > 0);
+	ratio = parse_fractional_ratio(str, len, &fractional_valid);
 
 	/* first try postgres parsing of non-fractional second timestamp (to allow greater flexibility) */
 	if (ParseDateTime(str, lowstr, MAXDATELEN + MAXDATEFIELDS, field, ftype, MAXDATEFIELDS, &nf) != 0 ||
@@ -285,8 +284,9 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	PG_RETURN_TIMESTAMP9(result);
 }
 
-long long parse_fractional_ratio(const char* str, size_t len)
+long long parse_fractional_ratio(const char* str, size_t len, bool * fractional_valid)
 {
+	*fractional_valid = false;
 	bool count = false;
 	long long ratio = 1000000000ll;
 	size_t i = 0;
@@ -294,6 +294,7 @@ long long parse_fractional_ratio(const char* str, size_t len)
 	{
 		if (count && (str[i] == ' ' || str[i] == '+' || str[i] == '-'))
 		{
+			*fractional_valid = (ratio > 0);
 			break;
 		}
 
