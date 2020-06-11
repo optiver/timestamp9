@@ -49,6 +49,9 @@ PG_FUNCTION_INFO_V1(timestamp9_interval_mi);
 #define kT_ns_in_s  (int64_t)1000000000
 #define kT_ns_in_us (int64_t)1000
 
+#define NO_COLON_TZ_OFFSET_LEN (size_t)4 /* length of string 0200 */
+#define COLON_TZ_OFFSET_LEN (size_t)5 /* length of string 02:00 */
+
 static TimestampTz
 timestamp9_to_timestamptz_internal(timestamp9 ts9)
 {
@@ -184,8 +187,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	int ftype[MAXDATEFIELDS];
 	char lowstr[MAXDATELEN + MAXDATEFIELDS];
 	long long ratio;
-	size_t i = 0;
-	bool count = false, fractional_valid = false;
+	bool fractional_valid = false;
 	size_t len = strlen(str);
 	int parsed_length;
 	long long ns;
@@ -207,26 +209,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		}
 	}
 
-	/* determine the number of digits for fractional seconds (after '.' and before ' ') in 2019-04-09 13:35:28.000100000 +0200
-	 * we need this to determine if postres standard non-fractional parsing is correct
-	 */
-	ratio = 1000000000ll;
-	i = 0;
-	while (i < len)
-	{
-		if (count && str[i] == ' ')
-		{
-			fractional_valid = ratio > 0;
-			break;
-		}
-
-		if (count)
-			ratio /= 10;
-
-		if (str[i] == '.')
-			count = true;
-		i++;
-	}
+	ratio = parse_fractional_ratio(str, len, &fractional_valid);
 
 	/* first try postgres parsing of non-fractional second timestamp (to allow greater flexibility) */
 	if (ParseDateTime(str, lowstr, MAXDATELEN + MAXDATEFIELDS, field, ftype, MAXDATEFIELDS, &nf) != 0 ||
@@ -238,15 +221,26 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		struct tm tm_ = {0};
 		long long ns;
 		char plusmin;
-		int gmt_offset;
+		char gmt_offset_str[6] = ""; /* length of XX:XX plus 1 according to sscanf rules to accomodate \0 */
+		int gmt_offset = 0;
 		int num_read;
-		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %c%d", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, &plusmin, &gmt_offset);
+		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %c%5s", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, &plusmin, gmt_offset_str);
 		if (num_read == 9 && fractional_valid)
 		{
+			bool offset_valid = false;
+			gmt_offset = parse_gmt_offset(gmt_offset_str, &offset_valid);
+
+			if (!offset_valid)
+			{
+				ereport(ERROR,
+						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+							errmsg("invalid input format for timestamp9: could not parse gmt offset, required format y-m-d h:m:s.ns +tz \"%s\"",
+								   str)));
+			}
+
 			time_t tt;
 			tm_.tm_year -= 1900;
 			tm_.tm_mon--;
-			gmt_offset = ((gmt_offset / 100) * 60 + gmt_offset % 100) * 60;
 			if (plusmin == '-')
 				gmt_offset = -gmt_offset;
 			tt = timegm(&tm_);
@@ -289,6 +283,65 @@ timestamp9_in(PG_FUNCTION_ARGS)
 
 	PG_RETURN_TIMESTAMP9(result);
 }
+
+long long parse_fractional_ratio(const char* str, size_t len, bool* fractional_valid)
+{
+	*fractional_valid = false;
+	bool count = false;
+	long long ratio = 1000000000ll;
+	size_t i = 0;
+	while (i < len)
+	{
+		if (count && (str[i] == ' ' || str[i] == '+' || str[i] == '-'))
+		{
+			*fractional_valid = (ratio > 0);
+			break;
+		}
+
+		if (count)
+			ratio /= 10;
+
+		if (str[i] == '.')
+			count = true;
+		i++;
+	}
+	return ratio;
+}
+
+int parse_gmt_offset(const char * str, bool* valid)
+{
+	*valid = false;
+	int gmt_offset_sec = 0;
+	const char * colon_at = strchr(str, ':');
+	size_t len = strlen(str);
+	if (colon_at == NULL)
+	{
+		if (len == NO_COLON_TZ_OFFSET_LEN)  /*being extra safe here as sscanf can give false positives on wrong format*/
+		{
+			int num_read = sscanf(str, "%d", &gmt_offset_sec);
+			if (num_read  == 1)
+			{
+				*valid = true;
+				gmt_offset_sec = ((gmt_offset_sec / 100) * 60 + gmt_offset_sec % 100) * 60;
+			}
+		}
+	}
+	else
+	{
+		if(len == COLON_TZ_OFFSET_LEN)
+		{
+			int offset_hour = 0, offset_minute = 0;
+			int num_read = sscanf(str, "%d:%d", &offset_hour, &offset_minute);
+			if (num_read == 2)
+			{
+				*valid = true;
+				gmt_offset_sec = offset_hour * 60 * 60 + offset_minute * 60;
+			}
+		}
+	}
+	return gmt_offset_sec;
+}
+
 
 /*
  *	timestamp9_out		- converts timestamp9 to "num"
