@@ -25,8 +25,8 @@ endif ()
 
 if (WIN32)
   if (NOT CMAKE_CONFIGURATION_TYPES)
-    # Default to only include Release builds so MSBuild.exe 'just works'
-    set(CMAKE_CONFIGURATION_TYPES Release CACHE STRING "Semicolon separated list of supported configuration types, only supports Debug, Release, MinSizeRel, and RelWithDebInfo, anything else will be ignored." FORCE)
+	# Default to only include Release builds so MSBuild.exe 'just works'
+	set(CMAKE_CONFIGURATION_TYPES Release CACHE STRING "Semicolon separated list of supported configuration types, only supports Debug, Release, MinSizeRel, and RelWithDebInfo, anything else will be ignored." FORCE)
   endif ()
 endif (WIN32)
 
@@ -38,35 +38,35 @@ message(STATUS "Build type is ${CMAKE_BUILD_TYPE}")
 # Search paths for Postgres binaries
 if (WIN32)
   find_path(PG_PATH
-    bin/postgres
-    HINTS
-    "C:/PostgreSQL"
-    "C:/Program Files/PostgreSQL"
-    PATH_SUFFIXES
-    bin
-    10/bin
-    96/bin
-    pg96/bin
-    DOC
-    "The path to a PostgreSQL installation")
+	bin/postgres
+	HINTS
+	"C:/PostgreSQL"
+	"C:/Program Files/PostgreSQL"
+	PATH_SUFFIXES
+	bin
+	10/bin
+	96/bin
+	pg96/bin
+	DOC
+	"The path to a PostgreSQL installation")
 endif (WIN32)
 
 if (UNIX)
   find_path(PG_PATH
-    bin/postgres
-    HINTS
-    $ENV{HOME}
-    /opt/local/pgsql
-    /usr/local/pgsql
-    /usr/lib/postgresql
-    PATH_SUFFIXES
-    bin
-    10/bin
-    9.6/bin
-    96/bin
-    pg96/bin
-    DOC
-    "The path to a PostgreSQL installation")
+	bin/postgres
+	HINTS
+	$ENV{HOME}
+	/opt/local/pgsql
+	/usr/local/pgsql
+	/usr/lib/postgresql
+	PATH_SUFFIXES
+	bin
+	10/bin
+	9.6/bin
+	96/bin
+	pg96/bin
+	DOC
+	"The path to a PostgreSQL installation")
 endif (UNIX)
 
 find_program(PG_CONFIG pg_config
@@ -171,17 +171,18 @@ endif (PG_SOURCE_DIR)
 add_custom_target(controlfile ALL DEPENDS timestamp9.control)
 
 add_subdirectory(src)
+add_subdirectory(tests)
 
 install(
   FILES timestamp9.control
   DESTINATION "${PG_SHAREDIR}/extension")
 
 macro(get_parents DIR DIR_LIST)
-    list(APPEND DIR_LIST ${DIR})
-    set(PDIR ${DIR})
+	list(APPEND DIR_LIST ${DIR})
+	set(PDIR ${DIR})
   while (NOT (${PDIR} STREQUAL "/"))
-    list(APPEND DIR_LIST ${PDIR})
-    get_filename_component(PDIR ${PDIR} DIRECTORY)
+	list(APPEND DIR_LIST ${PDIR})
+	get_filename_component(PDIR ${PDIR} DIRECTORY)
   endwhile ()
 endmacro()
 

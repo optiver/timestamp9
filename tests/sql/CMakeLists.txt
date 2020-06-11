@@ -1,0 +1,25 @@
+set(TEST_FILES
+  basics.sql
+)
+
+if(NOT TEST_GROUP_SIZE)
+  set(PARALLEL_GROUP_SIZE 20)
+else()
+  set(PARALLEL_GROUP_SIZE ${TEST_GROUP_SIZE})
+endif()
+
+set(GROUP_MEMBERS 0)
+
+list(SORT TEST_FILES)
+file(REMOVE ${TEST_SCHEDULE})
+
+foreach(TEST_FILE ${TEST_FILES})
+  string(REGEX REPLACE "(.+)\.sql" "\\1" TESTS_TO_RUN ${TEST_FILE})
+    if(GROUP_MEMBERS EQUAL 0)
+		file(APPEND ${TEST_SCHEDULE} "\ntest: ")
+	endif()
+	file(APPEND ${TEST_SCHEDULE} "${TESTS_TO_RUN} ")
+	MATH(EXPR GROUP_MEMBERS "(${GROUP_MEMBERS}+1)%${PARALLEL_GROUP_SIZE}")
+endforeach(TEST_FILE)
+
+file(APPEND ${TEST_SCHEDULE} "\n")
