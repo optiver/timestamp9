@@ -49,8 +49,8 @@ PG_FUNCTION_INFO_V1(timestamp9_interval_mi);
 #define kT_ns_in_s  (int64_t)1000000000
 #define kT_ns_in_us (int64_t)1000
 
-#define NO_COLON_TZ_OFFSET_LEN (size_t)4 //length of string 0200
-#define COLON_TZ_OFFSET_LEN (size_t)5 // length of string 02:00
+#define NO_COLON_TZ_OFFSET_LEN (size_t)4 /* length of string 0200 */
+#define COLON_TZ_OFFSET_LEN (size_t)5 /* length of string 02:00 */
 
 static TimestampTz
 timestamp9_to_timestamptz_internal(timestamp9 ts9)
@@ -221,7 +221,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		struct tm tm_ = {0};
 		long long ns;
 		char plusmin;
-		char gmt_offset_str[6] = ""; // length of XX:XX plus 1 according to sscanf rules to accomodate \0
+		char gmt_offset_str[6] = ""; /* length of XX:XX plus 1 according to sscanf rules to accomodate \0 */
 		int gmt_offset = 0;
 		int num_read;
 		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %c%5s", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, &plusmin, gmt_offset_str);
@@ -284,7 +284,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	PG_RETURN_TIMESTAMP9(result);
 }
 
-long long parse_fractional_ratio(const char* str, size_t len, bool * fractional_valid)
+long long parse_fractional_ratio(const char* str, size_t len, bool* fractional_valid)
 {
 	*fractional_valid = false;
 	bool count = false;
@@ -308,7 +308,7 @@ long long parse_fractional_ratio(const char* str, size_t len, bool * fractional_
 	return ratio;
 }
 
-int parse_gmt_offset(const char * str, bool * valid)
+int parse_gmt_offset(const char * str, bool* valid)
 {
 	*valid = false;
 	int gmt_offset_sec = 0;
@@ -316,7 +316,7 @@ int parse_gmt_offset(const char * str, bool * valid)
 	size_t len = strlen(str);
 	if (colon_at == NULL)
 	{
-		if (len == NO_COLON_TZ_OFFSET_LEN)  //being extra safe here as sscanf can give false positives on wrong format
+		if (len == NO_COLON_TZ_OFFSET_LEN)  /*being extra safe here as sscanf can give false positives on wrong format*/
 		{
 			int num_read = sscanf(str, "%d", &gmt_offset_sec);
 			if (num_read  == 1)
