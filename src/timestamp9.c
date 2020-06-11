@@ -224,6 +224,8 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		char gmt_offset_str[6] = ""; /* length of XX:XX plus 1 according to sscanf rules to accomodate \0 */
 		int gmt_offset = 0;
 		int num_read;
+		time_t tt;
+
 		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %c%5s", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, &plusmin, gmt_offset_str);
 		if (num_read == 9 && fractional_valid)
 		{
@@ -238,7 +240,6 @@ timestamp9_in(PG_FUNCTION_ARGS)
 								   str)));
 			}
 
-			time_t tt;
 			tm_.tm_year -= 1900;
 			tm_.tm_mon--;
 			if (plusmin == '-')
@@ -286,10 +287,11 @@ timestamp9_in(PG_FUNCTION_ARGS)
 
 long long parse_fractional_ratio(const char* str, size_t len, bool* fractional_valid)
 {
-	*fractional_valid = false;
 	bool count = false;
 	long long ratio = 1000000000ll;
 	size_t i = 0;
+	*fractional_valid = false;
+
 	while (i < len)
 	{
 		if (count && (str[i] == ' ' || str[i] == '+' || str[i] == '-'))
@@ -310,10 +312,11 @@ long long parse_fractional_ratio(const char* str, size_t len, bool* fractional_v
 
 int parse_gmt_offset(const char * str, bool* valid)
 {
-	*valid = false;
 	int gmt_offset_sec = 0;
 	const char * colon_at = strchr(str, ':');
 	size_t len = strlen(str);
+	*valid = false;
+
 	if (colon_at == NULL)
 	{
 		if (len == NO_COLON_TZ_OFFSET_LEN)  /*being extra safe here as sscanf can give false positives on wrong format*/
