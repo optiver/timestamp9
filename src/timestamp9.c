@@ -312,9 +312,10 @@ int parse_gmt_offset(const char * str, bool * valid)
 	*valid = false;
 	int gmt_offset_sec = 0;
 	const char * colon_at = strchr(str, ':');
+	size_t len = strlen(str);
 	if (colon_at == NULL)
 	{
-		//if (len == NO_COLON_TZ_OFFSET_LEN)  //being extra safe here as sscanf can give false positives on wrong format
+		if (len == NO_COLON_TZ_OFFSET_LEN)  //being extra safe here as sscanf can give false positives on wrong format
 		{
 			int num_read = sscanf(str, "%d", &gmt_offset_sec);
 			if (num_read  == 1)
@@ -326,7 +327,7 @@ int parse_gmt_offset(const char * str, bool * valid)
 	}
 	else
 	{
-		//if(len == COLON_TZ_OFFSET_LEN)
+		if(len == COLON_TZ_OFFSET_LEN)
 		{
 			int offset_hour = 0, offset_minute = 0;
 			int num_read = sscanf(str, "%d:%d", &offset_hour, &offset_minute);
