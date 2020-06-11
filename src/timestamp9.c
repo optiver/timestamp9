@@ -49,6 +49,9 @@ PG_FUNCTION_INFO_V1(timestamp9_interval_mi);
 #define kT_ns_in_s  (int64_t)1000000000
 #define kT_ns_in_us (int64_t)1000
 
+#define NO_COLON_TZ_OFFSET_LEN (size_t)4 //length of string 0200
+#define COLON_TZ_OFFSET_LEN (size_t)5 // length of string 02:00
+
 static TimestampTz
 timestamp9_to_timestamptz_internal(timestamp9 ts9)
 {
@@ -206,9 +209,6 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		}
 	}
 
-	/* determine the number of digits for fractional seconds (after '.' and before ' ') in 2019-04-09 13:35:28.000100000 +0200
-	 * we need this to determine if postres standard non-fractional parsing is correct
-	 */
 	ratio = parse_fractional_ratio(str, len);
 	fractional_valid = (ratio > 0);
 
@@ -309,33 +309,32 @@ long long parse_fractional_ratio(const char* str, size_t len)
 
 int parse_gmt_offset(const char * str, bool * valid)
 {
+	*valid = false;
 	int gmt_offset_sec = 0;
 	const char * colon_at = strchr(str, ':');
 	if (colon_at == NULL)
 	{
-		int num_read = sscanf(str, "%d", &gmt_offset_sec);
-		if (num_read  == 1)
+		//if (len == NO_COLON_TZ_OFFSET_LEN)  //being extra safe here as sscanf can give false positives on wrong format
 		{
-			*valid = true;
-			gmt_offset_sec = ((gmt_offset_sec / 100) * 60 + gmt_offset_sec % 100) * 60;
-		}
-		else
-		{
-			*valid = false;
+			int num_read = sscanf(str, "%d", &gmt_offset_sec);
+			if (num_read  == 1)
+			{
+				*valid = true;
+				gmt_offset_sec = ((gmt_offset_sec / 100) * 60 + gmt_offset_sec % 100) * 60;
+			}
 		}
 	}
 	else
 	{
-		int offset_hour = 0, offset_minute = 0;
-		int num_read = sscanf(str, "%d:%d", &offset_hour, &offset_minute);
-		if (num_read == 2)
+		//if(len == COLON_TZ_OFFSET_LEN)
 		{
-			*valid = true;
-			gmt_offset_sec = offset_hour * 60 * 60 + offset_minute * 60;
-		}
-		else
-		{
-			*valid = false;
+			int offset_hour = 0, offset_minute = 0;
+			int num_read = sscanf(str, "%d:%d", &offset_hour, &offset_minute);
+			if (num_read == 2)
+			{
+				*valid = true;
+				gmt_offset_sec = offset_hour * 60 * 60 + offset_minute * 60;
+			}
 		}
 	}
 	return gmt_offset_sec;
