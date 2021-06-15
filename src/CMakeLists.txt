@@ -73,6 +73,7 @@ set(MOD_FILES
 	timestamp9--0.1.0--0.2.0.sql
 	timestamp9--0.2.0--0.3.0.sql
 	timestamp9--0.3.0--1.0.0.sql
+	timestamp9--1.0.0--1.0.1.sql
 		)
 
 add_custom_target(sqlupdatescripts ALL DEPENDS ${MOD_FILES})
@@ -83,5 +84,5 @@ install(
 
 install(
   FILES ${CMAKE_CURRENT_BINARY_DIR}/${INSTALL_FILE}
-        ${MOD_FILES}
+		${MOD_FILES}
   DESTINATION "${PG_SHAREDIR}/extension")
