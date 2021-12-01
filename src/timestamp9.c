@@ -211,13 +211,12 @@ timestamp9_in(PG_FUNCTION_ARGS)
 
 	ratio = parse_fractional_ratio(str, len, &fractional_valid);
 
-	/* first try postgres parsing of non-fractional second timestamp (to allow greater flexibility) */
-	if (ParseDateTime(str, lowstr, MAXDATELEN + MAXDATEFIELDS, field, ftype, MAXDATEFIELDS, &nf) != 0 ||
-		DecodeDateTime(field, ftype, nf, &dtype, p_tm, &fsec, &tz) != 0 ||
-		fractional_valid ||
-		fsec != 0)
+	/* then try postgres parsing of up-to microsecond fractional second timestamp (to allow greater flexibility in input) */
+	if (ratio <= 100 ||
+		ParseDateTime(str, lowstr, MAXDATELEN + MAXDATEFIELDS, field, ftype, MAXDATEFIELDS, &nf) != 0 ||
+		DecodeDateTime(field, ftype, nf, &dtype, p_tm, &fsec, &tz) != 0)
 	{
-		/* it doesn't work - try our own parsing then */
+		/* it doesn't work - try our own simple parsing then */
 		struct tm tm_ = {0};
 		long long ns;
 		char plusmin;
