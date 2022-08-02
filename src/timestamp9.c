@@ -293,7 +293,7 @@ long long parse_fractional_ratio(const char* str, size_t len, bool* fractional_v
 
 	while (i < len)
 	{
-		if (count && (str[i] == ' ' || str[i] == '+' || str[i] == '-'))
+		if (count && (str[i] == ' ' || str[i] == '+' || str[i] == '-' || str[i] == 'Z'))
 		{
 			*fractional_valid = (ratio > 0);
 			break;
