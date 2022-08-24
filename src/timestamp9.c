@@ -364,6 +364,11 @@ timestamp9_out(PG_FUNCTION_ARGS)
 	}
 
 	tm_ = pg_localtime(&secs, session_timezone);
+	if (!tm_)
+		ereport(ERROR,
+			(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+			 errmsg("timestamp9 out of range")));
+
 	offset = pg_strftime(result, 41, "%Y-%m-%d %H:%M:%S", tm_);
 	offset += sprintf(result + offset, ".%09lld", mod);
 	offset += pg_strftime(result + offset, 41, " %z", tm_);
