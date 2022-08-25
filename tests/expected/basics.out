@@ -1,7 +1,11 @@
+-- Set timezone to UTC-2 so that timestamp9 can have consistent timezone configuration
+-- on machines in different timezones.
+set timezone to 'UTC-2';
+-- Test that we are able to convert nanoseconds to timestamp9.
 select 0::bigint::timestamp9;
              timestamp9              
 -------------------------------------
- 1970-01-01 01:00:00.000000000 +0100
+ 1970-01-01 02:00:00.000000000 +0200
 (1 row)
 
 select 9223372036854775807::timestamp9;
@@ -10,6 +14,7 @@ select 9223372036854775807::timestamp9;
  2262-04-12 01:47:16.854775807 +0200
 (1 row)
 
+-- Test that we are able to convert various formats of timestamps to timestamp9 type.
 select '2019-09-19 08:30:05.123456789 +0200'::timestamp9;
              timestamp9              
 -------------------------------------
@@ -37,18 +42,176 @@ select '2019-09-19 08:30:05.123456789 -02:00'::timestamp9;
 select '2019-09-19 08:30:05'::timestamp9;
              timestamp9              
 -------------------------------------
- 2019-09-19 17:30:05.000000000 +0200
+ 2019-09-19 08:30:05.000000000 +0200
 (1 row)
 
+-- Test that we are able to control the timezone of timestamp9 via the 'timezone' GUC.
+set timezone to 'UTC-8';
+select '2019-09-19 08:30:05 +0800'::timestamp9;
+             timestamp9              
+-------------------------------------
+ 2019-09-19 08:30:05.000000000 +0800
+(1 row)
+
+set timezone to 'Europe/London';
+select '2019-09-19 08:30:05 +0100'::timestamp9;
+             timestamp9              
+-------------------------------------
+ 2019-09-19 08:30:05.000000000 +0100
+(1 row)
+
+-- NOTE: If we don't specify the timezone when parsing the time, it follows the timezone
+-- of the current session by default.
+select '2019-09-19 08:30:05'::timestamp9;
+             timestamp9              
+-------------------------------------
+ 2019-09-19 08:30:05.000000000 +0100
+(1 row)
+
+set timezone to 'UTC-2';
+-- Test that we are able to compare timestamp9 values.
 select '2019-09-19'::timestamp9 < '2019-09-20'::timestamp9, greatest('2020-06-06'::timestamp9, '2019-01-01'::timestamp9);
  ?column? |              greatest               
 ----------+-------------------------------------
- t        | 2020-06-06 09:00:00.000000000 +0200
+ t        | 2020-06-06 00:00:00.000000000 +0200
 (1 row)
 
-select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1d';
+select '2019-09-19'::timestamp9 > '2019-09-20'::timestamp9, least('2020-06-06'::timestamp9, '2019-01-01'::timestamp9);
+ ?column? |                least                
+----------+-------------------------------------
+ f        | 2019-01-01 00:00:00.000000000 +0200
+(1 row)
+
+select '2019-09-19'::timestamp9 >= '2019-09-20'::timestamp9;
+ ?column? 
+----------
+ f
+(1 row)
+
+select '2019-09-20'::timestamp9 >= '2019-09-20'::timestamp9;
+ ?column? 
+----------
+ t
+(1 row)
+
+select '2019-09-19'::timestamp9 <= '2019-09-20'::timestamp9;
+ ?column? 
+----------
+ t
+(1 row)
+
+select '2019-09-20'::timestamp9 <= '2019-09-20'::timestamp9;
+ ?column? 
+----------
+ t
+(1 row)
+
+select '2019-09-19'::timestamp9 = '2019-09-20'::timestamp9;
+ ?column? 
+----------
+ f
+(1 row)
+
+select '2019-09-20'::timestamp9 = '2019-09-20'::timestamp9;
+ ?column? 
+----------
+ t
+(1 row)
+
+-- Test that we can do arith calculations with timestamp9.
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1 year';
+              ?column?               
+-------------------------------------
+ 2020-09-19 23:00:00.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 years';
+              ?column?               
+-------------------------------------
+ 2017-09-19 23:00:00.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1 mon';
+              ?column?               
+-------------------------------------
+ 2019-10-19 23:00:00.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 mons';
+              ?column?               
+-------------------------------------
+ 2019-07-19 23:00:00.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1 day';
               ?column?               
 -------------------------------------
  2019-09-20 23:00:00.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 days';
+              ?column?               
+-------------------------------------
+ 2019-09-17 23:00:00.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1 hour';
+              ?column?               
+-------------------------------------
+ 2019-09-20 00:00:00.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 hours';
+              ?column?               
+-------------------------------------
+ 2019-09-19 21:00:00.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1 min';
+              ?column?               
+-------------------------------------
+ 2019-09-19 23:01:00.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 mins';
+              ?column?               
+-------------------------------------
+ 2019-09-19 22:58:00.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1 sec';
+              ?column?               
+-------------------------------------
+ 2019-09-19 23:00:01.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 secs';
+              ?column?               
+-------------------------------------
+ 2019-09-19 22:59:58.123456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1 millisecond';
+              ?column?               
+-------------------------------------
+ 2019-09-19 23:00:00.124456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 milliseconds';
+              ?column?               
+-------------------------------------
+ 2019-09-19 23:00:00.121456789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1 microsecond';
+              ?column?               
+-------------------------------------
+ 2019-09-19 23:00:00.123457789 +0200
+(1 row)
+
+select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 microseconds';
+              ?column?               
+-------------------------------------
+ 2019-09-19 23:00:00.123454789 +0200
 (1 row)
 
