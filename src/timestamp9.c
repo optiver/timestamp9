@@ -354,7 +354,7 @@ timestamp9_out(PG_FUNCTION_ARGS)
 	timestamp9 arg1 = PG_GETARG_TIMESTAMP9(0);
 	char *result = (char *) palloc(41);
 	time_t secs = (time_t)(arg1 / kT_ns_in_s);
-	struct tm tm_;
+	struct pg_tm *tm_;
 	size_t offset;
 	long long int mod = (arg1 % kT_ns_in_s);
 	if (mod < 0)
@@ -362,10 +362,16 @@ timestamp9_out(PG_FUNCTION_ARGS)
 		mod += kT_ns_in_s;
 		secs -= 1;
 	}
-	localtime_r(&secs, &tm_);
-	offset = strftime(result, 41, "%Y-%m-%d %H:%M:%S", &tm_);
+
+	tm_ = pg_localtime(&secs, session_timezone);
+	if (!tm_)
+		ereport(ERROR,
+			(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+			 errmsg("timestamp9 out of range")));
+
+	offset = pg_strftime(result, 41, "%Y-%m-%d %H:%M:%S", tm_);
 	offset += sprintf(result + offset, ".%09lld", mod);
-	offset += strftime(result + offset, 41, " %z", &tm_);
+	offset += pg_strftime(result + offset, 41, " %z", tm_);
 
 	PG_RETURN_CSTRING(result);
 }
