@@ -18,7 +18,7 @@ set(ISOLATION_TEST_SCHEDULE ${CMAKE_CURRENT_BINARY_DIR}/isolation_test_schedule)
 
 set(PG_REGRESS_OPTS_BASE
   --host=${TEST_PGHOST}
-  --load-language=plpgsql
+  --load-extension=plpgsql
   --dlpath=${PROJECT_BINARY_DIR}/src)
 
 set(PG_REGRESS_OPTS_EXTRA

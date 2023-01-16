@@ -172,7 +172,7 @@ CREATE OR REPLACE FUNCTION hash_timestamp9(timestamp9) RETURNS integer AS
 LANGUAGE internal IMMUTABLE STRICT PARALLEL SAFE LEAKPROOF;
 
 CREATE OPERATOR CLASS hash_timestamp9_ops
-FOR TYPE timestamp9 USING hash FAMILY integer_ops AS
+DEFAULT FOR TYPE timestamp9 USING hash FAMILY integer_ops AS
 	OPERATOR 1 =,
 	FUNCTION 1 hash_timestamp9(timestamp9);
 

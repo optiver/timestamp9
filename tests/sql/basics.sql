@@ -58,3 +58,8 @@ select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 milliseco
 
 select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1 microsecond';
 select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 microseconds';
+
+CREATE TABLE tbl(ts timestamp9);
+CREATE INDEX ON tbl USING hash (ts);
+
+CREATE TABLE tbl1(ts timestamp9) PARTITION BY HASH (ts);
