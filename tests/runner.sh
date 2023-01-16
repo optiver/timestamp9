@@ -53,7 +53,8 @@ cd ${EXE_DIR}/sql
 
 # create database and install timestamp9
 ${PSQL} $@ -U $TEST_ROLE_SUPERUSER -d postgres -v ECHO=none -c "CREATE DATABASE \"${TEST_DBNAME}\";"
-${PSQL} $@ -U $TEST_ROLE_SUPERUSER -d ${TEST_DBNAME} -v ECHO=none -c "SET client_min_messages=error; CREATE EXTENSION timestamp9;"
+${PSQL} $@ -U $TEST_ROLE_SUPERUSER -d ${TEST_DBNAME} -v ECHO=none -c "SET client_min_messages=error; CREATE EXTENSION timestamp9; \
+    GRANT CREATE ON SCHEMA public TO PUBLIC;"
 
 export TEST_DBNAME
 
