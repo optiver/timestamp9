@@ -21,6 +21,7 @@ select '2019-09-19 08:30:05 +0100'::timestamp9;
 -- NOTE: If we don't specify the timezone when parsing the time, it follows the timezone
 -- of the current session by default.
 select '2019-09-19 08:30:05'::timestamp9;
+select '2019-09-19 08:30:05.123456789'::timestamp9;
 set timezone to 'UTC-2';
 
 
