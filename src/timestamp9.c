@@ -224,7 +224,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		int num_read;
 		time_t tt;
 
-		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %s", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, gmt_offset_str);
+		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %254s", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, gmt_offset_str);
 		if ((num_read == 7 || num_read == 8) && fractional_valid)
 		{
 			int gmt_offset_str_len = strlen(gmt_offset_str);
