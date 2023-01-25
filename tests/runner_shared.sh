@@ -42,7 +42,7 @@ cd ${EXE_DIR}/sql
 # we strip out any output between <exclude_from_test></exclude_from_test>
 # and the part about memory usage in EXPLAIN ANALYZE output of Sort nodes
 ${PSQL} -U ${TEST_PGUSER} \
-     -v ON_ERROR_STOP=1 \
+     -v ON_ERROR_STOP=0 \
      -v VERBOSITY=terse \
      -v ECHO=all \
      -v TEST_BASE_NAME=${TEST_BASE_NAME} \

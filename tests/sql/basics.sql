@@ -24,6 +24,9 @@ select '2019-09-19 08:30:05'::timestamp9;
 select '2019-09-19 08:30:05.123456789'::timestamp9;
 set timezone to 'UTC-2';
 
+-- Test that we are able to reject bad inputs.
+select '2022-01-25 00:00:00.123456789 +'::timestamp9;
+select '2022-01-25 00:00:00.123456789 abcd'::timestamp9;
 
 -- Test that we are able to compare timestamp9 values.
 select '2019-09-19'::timestamp9 < '2019-09-20'::timestamp9, greatest('2020-06-06'::timestamp9, '2019-01-01'::timestamp9);

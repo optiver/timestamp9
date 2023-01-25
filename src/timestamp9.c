@@ -219,19 +219,23 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		/* it doesn't work - try our own simple parsing then */
 		struct tm tm_ = {0};
 		long long ns;
-		char plusmin;
-		char gmt_offset_str[6] = ""; /* length of XX:XX plus 1 according to sscanf rules to accomodate \0 */
+		char gmt_offset_str[TZ_STRLEN_MAX] = ""; /* length of XX:XX plus 1 according to sscanf rules to accomodate \0 */
 		int gmt_offset = 0;
 		int num_read;
 		time_t tt;
 
-		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %c%5s", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, &plusmin, gmt_offset_str);
-		if ((num_read == 7 || num_read == 9) && fractional_valid)
+		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %s", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, gmt_offset_str);
+		if ((num_read == 7 || num_read == 8) && fractional_valid)
 		{
-			if (num_read == 9)
+			int gmt_offset_str_len = strlen(gmt_offset_str);
+			if (gmt_offset_str_len != 0)
 			{
-				/* If we specify the timezone, try to decode it. */
-				if (DecodeTimezone(psprintf("%c%s", plusmin, gmt_offset_str), &gmt_offset) != 0)
+				/*
+				 * If we have specified the timezone, try to decode it. DecodeTimezone can handle most of the malformed input,
+				 * except 'select '2022-12-30 13:00:00.123456789 +'::timestamp9;'. We use 'gmt_offset_str_len == 1' to detect
+				 * such input.
+				 */
+				if (gmt_offset_str_len == 1 || DecodeTimezone(gmt_offset_str, &gmt_offset) != 0)
 				{
 					ereport(ERROR,
 						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
@@ -239,9 +243,9 @@ timestamp9_in(PG_FUNCTION_ARGS)
 							str)));
 				}
 			}
-			else if (num_read == 7)
+			else
 			{
-				/* If we didn't specify the timezone, let's use session_timezone to determin the gmt_offset. */
+				/* If we haven't specified the timezone, let's use session_timezone to determin the gmt_offset. */
 				struct pg_tm temp_tm = {0};
 				temp_tm.tm_year = tm_.tm_year;
 				temp_tm.tm_mon = tm_.tm_mon;
