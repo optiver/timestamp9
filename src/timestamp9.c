@@ -13,6 +13,7 @@
 #include "utils/timestamp.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
+#include "parser/scansup.h"
 #include "pgtime.h"
 
 #include "timestamp9.h"
@@ -169,6 +170,94 @@ timestamptz2timestamp(TimestampTz timestamp)
 }
 
 /*
+ * This function is directly copied from backend/utils/adt/timestamp.c
+ */
+static int
+parse_sane_timezone(struct pg_tm *tm, char *tzname)
+{
+	int			rt;
+	int			tz;
+
+	/*
+	 * Look up the requested timezone.  First we try to interpret it as a
+	 * numeric timezone specification; if DecodeTimezone decides it doesn't
+	 * like the format, we look in the timezone abbreviation table (to handle
+	 * cases like "EST"), and if that also fails, we look in the timezone
+	 * database (to handle cases like "America/New_York").  (This matches the
+	 * order in which timestamp input checks the cases; it's important because
+	 * the timezone database unwisely uses a few zone names that are identical
+	 * to offset abbreviations.)
+	 *
+	 * Note pg_tzset happily parses numeric input that DecodeTimezone would
+	 * reject.  To avoid having it accept input that would otherwise be seen
+	 * as invalid, it's enough to disallow having a digit in the first
+	 * position of our input string.
+	 */
+	if (isdigit((unsigned char) *tzname))
+		ereport(ERROR,
+			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+			 errmsg("invalid input syntax for type %s: \"%s\"",
+				"numeric time zone", tzname),
+			 errhint("Numeric time zones must have \"-\" or \"+\" as first character.")));
+
+	if ((tzname[0] == '+' || tzname[0] == '-') && tzname[1] == '\0')
+	{
+		ereport(ERROR,
+			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+			 errmsg("invalid input syntax for type %s: \"%s\"", "numeric timezone", tzname),
+			 errhint("Numeric time zones must have the numeric part")));
+	}
+
+	rt = DecodeTimezone(tzname, &tz);
+	if (rt != 0)
+	{
+		char	   *lowzone;
+		int			type,
+					val;
+		pg_tz	   *tzp;
+
+		if (rt == DTERR_TZDISP_OVERFLOW)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("numeric time zone \"%s\" out of range", tzname)));
+		else if (rt != DTERR_BAD_FORMAT)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("time zone \"%s\" not recognized", tzname)));
+
+		/* DecodeTimezoneAbbrev requires lowercase input */
+		lowzone = downcase_truncate_identifier(tzname,
+						       strlen(tzname),
+						       false);
+		type = DecodeTimezoneAbbrev(0, lowzone, &val, &tzp);
+
+		if (type == TZ || type == DTZ)
+		{
+			/* fixed-offset abbreviation */
+			tz = -val;
+		}
+		else if (type == DYNTZ)
+		{
+			/* dynamic-offset abbreviation, resolve using specified time */
+			tz = DetermineTimeZoneAbbrevOffset(tm, tzname, tzp);
+		}
+		else
+		{
+			/* try it as a full zone name */
+			tzp = pg_tzset(tzname);
+			if (tzp)
+				tz = DetermineTimeZoneOffset(tm, tzp);
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("time zone \"%s\" not recognized", tzname)));
+		}
+	}
+
+	return tz;
+}
+
+/*
  *	timestamp9_in		- converts "num" to timestamp9
  */
 Datum
@@ -219,15 +308,19 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		/* it doesn't work - try our own simple parsing then */
 		struct tm tm_ = {0};
 		long long ns;
-		char gmt_offset_str[TZ_STRLEN_MAX] = ""; /* length of XX:XX plus 1 according to sscanf rules to accomodate \0 */
+		char gmt_offset_str[TZ_STRLEN_MAX + 1] = "";
 		int gmt_offset = 0;
 		int num_read;
 		time_t tt;
 
-		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %254s", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, gmt_offset_str);
+		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %255s", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, gmt_offset_str);
 		if ((num_read == 7 || num_read == 8) && fractional_valid)
 		{
 			int gmt_offset_str_len = strlen(gmt_offset_str);
+			struct pg_tm temp_tm = {0};
+			temp_tm.tm_year = tm_.tm_year;
+			temp_tm.tm_mon = tm_.tm_mon;
+			temp_tm.tm_mday = tm_.tm_mday;
 			if (gmt_offset_str_len != 0)
 			{
 				/*
@@ -235,21 +328,11 @@ timestamp9_in(PG_FUNCTION_ARGS)
 				 * except 'select '2022-12-30 13:00:00.123456789 +'::timestamp9;'. We use 'gmt_offset_str_len == 1' to detect
 				 * such input.
 				 */
-				if (gmt_offset_str_len == 1 || DecodeTimezone(gmt_offset_str, &gmt_offset) != 0)
-				{
-					ereport(ERROR,
-						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-						 errmsg("invalid input format for timestamp9: could not parse gmt offset, required format y-m-d h:m:s.ns [+tz] \"%s\"",
-							str)));
-				}
+				gmt_offset = parse_sane_timezone(&temp_tm, gmt_offset_str);
 			}
 			else
 			{
 				/* If we haven't specified the timezone, let's use session_timezone to determin the gmt_offset. */
-				struct pg_tm temp_tm = {0};
-				temp_tm.tm_year = tm_.tm_year;
-				temp_tm.tm_mon = tm_.tm_mon;
-				temp_tm.tm_mday = tm_.tm_mday;
 				gmt_offset = DetermineTimeZoneOffset(&temp_tm, session_timezone);
 			}
 

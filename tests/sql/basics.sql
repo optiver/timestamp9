@@ -22,6 +22,9 @@ select '2019-09-19 08:30:05 +0100'::timestamp9;
 -- of the current session by default.
 select '2019-09-19 08:30:05'::timestamp9;
 select '2019-09-19 08:30:05.123456789'::timestamp9;
+-- Test that we can use various timezones.
+select '2019-09-19 08:30:05.123456789 Europe/London'::timestamp9;
+select '2019-09-19 08:30:05.123456789 utc-2'::timestamp9;
 set timezone to 'UTC-2';
 
 -- Test that we are able to reject bad inputs.
