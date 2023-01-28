@@ -170,7 +170,9 @@ timestamptz2timestamp(TimestampTz timestamp)
 }
 
 /*
- * This function is directly copied from backend/utils/adt/timestamp.c
+ * This function is directly copied from backend/utils/adt/timestamp.c.
+ * Additionally, we check if the numeric time zone contains a valid numeric
+ * part, since DecodeTimezone doesn't check it.
  */
 static int
 parse_sane_timezone(struct pg_tm *tm, char *tzname)
@@ -200,6 +202,9 @@ parse_sane_timezone(struct pg_tm *tm, char *tzname)
 				"numeric time zone", tzname),
 			 errhint("Numeric time zones must have \"-\" or \"+\" as first character.")));
 
+	/*
+	 * If tzname is a numeric time zone, let's check if it contains a valid numeric part.
+	 */
 	if ((tzname[0] == '+' || tzname[0] == '-') && tzname[1] == '\0')
 	{
 		ereport(ERROR,
@@ -323,11 +328,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 			temp_tm.tm_mday = tm_.tm_mday;
 			if (gmt_offset_str_len != 0)
 			{
-				/*
-				 * If we have specified the timezone, try to decode it. DecodeTimezone can handle most of the malformed input,
-				 * except 'select '2022-12-30 13:00:00.123456789 +'::timestamp9;'. We use 'gmt_offset_str_len == 1' to detect
-				 * such input.
-				 */
+				/* If we have specified the timezone, try to decode it. */
 				gmt_offset = parse_sane_timezone(&temp_tm, gmt_offset_str);
 			}
 			else
