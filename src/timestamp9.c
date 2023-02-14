@@ -510,7 +510,24 @@ bt_timestamp9_cmp(PG_FUNCTION_ARGS)
 Datum timestamp9_to_timestamptz(PG_FUNCTION_ARGS)
 {
 	timestamp9 ts9 = PG_GETARG_TIMESTAMP9(0);
-	TimestampTz us = timestamp9_to_timestamptz_internal(ts9);
+	/*
+	 * We cannot use timestamp9_to_timestamptz_internal() here,
+	 * since it will ignore fractional parts. E.g.,
+	 * if we use timestamp9_to_timestamptz_internal() to convert
+	 * the following timestamp,
+	 * '2023-01-01 00:00:00.123456789'::timestamp9::timestamptz
+	 * we will get '2023-01-01 00:00:00.123456 +XXXX'
+	 */
+	TimestampTz us = (ts9 + 999) / 1000;
+	us -= ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
+
+	/* Recheck in case roundoff produces something just out of range */
+	if (!IS_VALID_TIMESTAMP(us))
+		ereport(ERROR,
+			(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+			 errmsg("timestamp9 out of range: \"%lld\"",
+				PG_GETARG_TIMESTAMP9(0))));
+
 	PG_RETURN_TIMESTAMPTZ(us);
 }
 
@@ -525,7 +542,15 @@ Datum timestamptz_to_timestamp9(PG_FUNCTION_ARGS)
 Datum timestamp9_to_timestamp(PG_FUNCTION_ARGS)
 {
 	timestamp9 ts9 = PG_GETARG_TIMESTAMP9(0);
-	TimestampTz us = ts9 / 1000;
+	/*
+	 * We cannot use timestamp9_to_timestamptz_internal() here,
+	 * since it will ignore fractional parts. E.g.,
+	 * if we use timestamp9_to_timestamptz_internal() to convert
+	 * the following timestamp,
+	 * '2023-01-01 00:00:00.123456789'::timestamp9::timestamptz
+	 * we will get '2023-01-01 00:00:00.123456 +XXXX'
+	 */
+	TimestampTz us = (ts9 + 999) / 1000;
 	us -= ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
 
 	/* Recheck in case roundoff produces something just out of range */

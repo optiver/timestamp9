@@ -6,6 +6,15 @@ set timezone to 'UTC-2';
 select 0::bigint::timestamp9;
 select 9223372036854775807::timestamp9;
 
+-- Test that we are able to convert various date/timestamp types to timestamp9 type.
+select '2023-01-01 00:00:00.123456789'::date::timestamp9;
+select '2023-01-01 00:00:00.123456789'::timestamp::timestamp9;
+select '2023-01-01 00:00:00.123456789'::timestamptz::timestamp9;
+
+select '2023-01-01 00:00:00.123456789'::timestamp9::date;
+select '2023-01-01 00:00:00.123456789'::timestamp9::timestamp;
+select '2023-01-01 00:00:00.123456789'::timestamp9::timestamptz;
+
 -- Test that we are able to convert various formats of timestamps to timestamp9 type.
 select '2019-09-19 08:30:05.123456789 +0200'::timestamp9;
 select '2019-09-19 08:30:05.123456789-0200'::timestamp9;

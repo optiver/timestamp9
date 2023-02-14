@@ -14,6 +14,43 @@ select 9223372036854775807::timestamp9;
  2262-04-12 01:47:16.854775807 +0200
 (1 row)
 
+-- Test that we are able to convert various date/timestamp types to timestamp9 type.
+select '2023-01-01 00:00:00.123456789'::date::timestamp9;
+             timestamp9              
+-------------------------------------
+ 2023-01-01 00:00:00.000000000 +0200
+(1 row)
+
+select '2023-01-01 00:00:00.123456789'::timestamp::timestamp9;
+             timestamp9              
+-------------------------------------
+ 2023-01-01 00:00:00.123457000 +0200
+(1 row)
+
+select '2023-01-01 00:00:00.123456789'::timestamptz::timestamp9;
+             timestamp9              
+-------------------------------------
+ 2023-01-01 00:00:00.123457000 +0200
+(1 row)
+
+select '2023-01-01 00:00:00.123456789'::timestamp9::date;
+    date    
+------------
+ 01-01-2023
+(1 row)
+
+select '2023-01-01 00:00:00.123456789'::timestamp9::timestamp;
+            timestamp            
+---------------------------------
+ Sun Jan 01 00:00:00.123457 2023
+(1 row)
+
+select '2023-01-01 00:00:00.123456789'::timestamp9::timestamptz;
+             timestamptz             
+-------------------------------------
+ Sun Jan 01 00:00:00.123457 2023 UTC
+(1 row)
+
 -- Test that we are able to convert various formats of timestamps to timestamp9 type.
 select '2019-09-19 08:30:05.123456789 +0200'::timestamp9;
              timestamp9              
