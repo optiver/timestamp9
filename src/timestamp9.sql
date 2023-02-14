@@ -224,3 +224,7 @@ CREATE OPERATOR + (
 	PROCEDURE = interval_timestamp9_pl,
 	COMMUTATOR = +
 	);
+
+CREATE FUNCTION timestamp9_nsnow() RETURNS timestamp9 AS
+'$libdir/timestamp9'
+	LANGUAGE c STABLE STRICT PARALLEL SAFE;
