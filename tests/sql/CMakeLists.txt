@@ -1,5 +1,6 @@
 set(TEST_FILES
   basics.sql
+  value-range.sql
 )
 
 if(NOT TEST_GROUP_SIZE)
