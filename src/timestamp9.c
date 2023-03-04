@@ -80,7 +80,7 @@ timestamptz_to_timestamp9_internal(TimestampTz ts)
 		ereport(ERROR,
 			(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 			 errmsg("overflow happens when converting TimestampTz to timestamp9"),
-			 errhint("the input timestamp should be within range ['1900-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
+			 errhint("the input timestamp should be within range ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
 	return ns;
 }
 
@@ -107,7 +107,7 @@ date2timestamp9(DateADT dateVal)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 					 errmsg("date out of range for timestamp9"),
-					 errhint("the input date should be within range [1900-01-01, 2262-01-01)")));
+					 errhint("the input date should be within range [1700-01-01, 2262-01-01)")));
 
 		j2date(dateVal + POSTGRES_EPOCH_JDATE,
 			   &(tm->tm_year), &(tm->tm_mon), &(tm->tm_mday));
@@ -314,7 +314,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 				ereport(ERROR,
 					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 					 errmsg("timestamp9 is out of range"),
-					 errhint("the input nanoseconds should be within range [%ld, %ld) which is corresponding to ['1900-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')",
+					 errhint("the input nanoseconds should be within range [%ld, %ld) which is corresponding to ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')",
 						 MIN_TIMESTAMP9, END_TIMESTAMP9)));
 			PG_RETURN_TIMESTAMP9(ns);
 		}
@@ -365,7 +365,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 			if (result / kT_ns_in_s != tt || !IS_VALID_TIMESTAMP9(result))
 				ereport(ERROR, (errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 						errmsg("timestamp9 is out of range"),
-						errhint("the input timestamp should be within the range ['1900-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
+						errhint("the input timestamp should be within the range ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
 
 			/* We don't need to validate the nanoseconds part if the date time has already been within the range. */
 			result += (ns * ratio);
@@ -398,7 +398,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		if (result / 1000 != pg_ts || !IS_VALID_TIMESTAMP9(result))
 			ereport(ERROR, (errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 					errmsg("timestamp9 is out of range"),
-					errhint("the input timestamp should be within the range ['1900-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
+					errhint("the input timestamp should be within the range ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
 		break;
 	}
 	default:
@@ -474,8 +474,13 @@ Datum
 timestamp9_recv(PG_FUNCTION_ARGS)
 {
 	StringInfo buf = (StringInfo) PG_GETARG_POINTER(0);
-
-	PG_RETURN_TIMESTAMP9((timestamp9) pq_getmsgint64(buf));
+	timestamp9 ts9 = (timestamp9) pq_getmsgint64(buf);
+	if (!IS_VALID_TIMESTAMP9(ts9))
+		ereport(ERROR,
+			(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+			 errmsg("timestamp9 out of range"),
+			 errhint("the input timestamp should be within the range ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
+	PG_RETURN_TIMESTAMP9(ts9);
 }
 
 /*
@@ -582,7 +587,7 @@ Datum timestamp_to_timestamp9(PG_FUNCTION_ARGS)
 	if (ns / 1000 != ts || !IS_VALID_TIMESTAMP9(ns))
 		ereport(ERROR, (errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				errmsg("timestamp9 out of range"),
-				errhint("the input timestamp should be within range: [1900-01-01 00:00:00.000000000, 2262-01-01 00:00:00.000000000)")));
+				errhint("the input timestamp should be within range: [1700-01-01 00:00:00.000000000, 2262-01-01 00:00:00.000000000)")));
 
 	PG_RETURN_TIMESTAMP9(ns);
 }

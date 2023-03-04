@@ -14,10 +14,10 @@ typedef long long timestamp9;
 #define PG_RETURN_TIMESTAMP9(x)	return Timestamp9GetDatum(x)
 
 #define TIMESTAMP9_END_JULIAN (2547239) /* == date2j(2262, 1, 1) */
-#define TIMESTAMP9_MIN_JULIAN (2415021) /* == date2j(1900, 1, 1) */
+#define TIMESTAMP9_MIN_JULIAN (2341973) /* == date2j(1700, 1, 1) */
 
 /* Timestamp limits */
-#define MIN_TIMESTAMP9  INT64CONST(-2208988800000000000)
+#define MIN_TIMESTAMP9  INT64CONST(-8520336000000000000)
 /* == (TIMESTAMP9_MIN_JULIAN - UNIX_EPOCH_JDATE) * (nanoseconds per day) */
 #define END_TIMESTAMP9	INT64CONST(9214646400000000000)
 /* == (TIMESTAMP9_END_JULIAN - UNIX_EPOCH_JDATE) * (nanoseconds per day) */
