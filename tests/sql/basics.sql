@@ -4,7 +4,7 @@ set timezone to 'UTC-2';
 
 -- Test that we are able to convert nanoseconds to timestamp9.
 select 0::bigint::timestamp9;
-select 9223372036854775807::timestamp9;
+select 9214646399999999999::timestamp9;
 
 -- Test that we are able to convert various formats of timestamps to timestamp9 type.
 select '2019-09-19 08:30:05.123456789 +0200'::timestamp9;

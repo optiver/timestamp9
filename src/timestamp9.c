@@ -41,6 +41,7 @@ PG_FUNCTION_INFO_V1(timestamp9_to_timestamp);
 PG_FUNCTION_INFO_V1(timestamp_to_timestamp9);
 PG_FUNCTION_INFO_V1(timestamp9_to_date);
 PG_FUNCTION_INFO_V1(date_to_timestamp9);
+PG_FUNCTION_INFO_V1(bigint_to_timestamp9);
 
 PG_FUNCTION_INFO_V1(timestamp9_larger);
 PG_FUNCTION_INFO_V1(timestamp9_smaller);
@@ -107,7 +108,7 @@ date2timestamp9(DateADT dateVal)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 					 errmsg("date out of range for timestamp9"),
-					 errhint("the input date should be within range [1700-01-01, 2262-01-01)")));
+					 errhint("the input date should be within range ['1700-01-01', '2262-01-01')")));
 
 		j2date(dateVal + POSTGRES_EPOCH_JDATE,
 			   &(tm->tm_year), &(tm->tm_mon), &(tm->tm_mday));
@@ -587,7 +588,7 @@ Datum timestamp_to_timestamp9(PG_FUNCTION_ARGS)
 	if (ns / 1000 != ts || !IS_VALID_TIMESTAMP9(ns))
 		ereport(ERROR, (errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 				errmsg("timestamp9 out of range"),
-				errhint("the input timestamp should be within range: [1700-01-01 00:00:00.000000000, 2262-01-01 00:00:00.000000000)")));
+				errhint("the input timestamp should be within range: ['1700-01-01 00:00:00.000000000', '2262-01-01 00:00:00.000000000')")));
 
 	PG_RETURN_TIMESTAMP9(ns);
 }
@@ -618,6 +619,17 @@ Datum date_to_timestamp9(PG_FUNCTION_ARGS)
 	DateADT date = PG_GETARG_DATEADT(0);
 	timestamp9 ts = date2timestamp9(date);
 	PG_RETURN_TIMESTAMP9(ts);
+}
+
+Datum bigint_to_timestamp9(PG_FUNCTION_ARGS)
+{
+	long long bigint = PG_GETARG_INT64(0);
+	if (!IS_VALID_TIMESTAMP9(bigint))
+		ereport(ERROR, (errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				errmsg("timestamp9 out of range"),
+				errhint("the input bigint should be within range [%ld, %ld) which is corresponding to ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')",
+					MIN_TIMESTAMP9, END_TIMESTAMP9)));
+	PG_RETURN_TIMESTAMP9(bigint);
 }
 
 Datum timestamp9_larger(PG_FUNCTION_ARGS)
