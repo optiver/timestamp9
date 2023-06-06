@@ -176,6 +176,77 @@ timestamptz2timestamp(TimestampTz timestamp)
  */
 static int
 parse_sane_timezone(struct pg_tm *tm, char *tzname)
+#if PG16_GE
+{
+	int			dterr;
+	int			tz;
+
+	/*
+	 * Look up the requested timezone.  First we try to interpret it as a
+	 * numeric timezone specification; if DecodeTimezone decides it doesn't
+	 * like the format, we try timezone abbreviations and names.
+	 *
+	 * Note pg_tzset happily parses numeric input that DecodeTimezone would
+	 * reject.  To avoid having it accept input that would otherwise be seen
+	 * as invalid, it's enough to disallow having a digit in the first
+	 * position of our input string.
+	 */
+	if (isdigit((unsigned char) *tzname))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("invalid input syntax for type %s: \"%s\"",
+						"numeric time zone", tzname),
+				 errhint("Numeric time zones must have \"-\" or \"+\" as first character.")));
+
+	/*
+	 * If tzname is a numeric time zone, let's check if it contains a valid numeric part.
+	 */
+	if ((tzname[0] == '+' || tzname[0] == '-') && tzname[1] == '\0')
+	{
+		ereport(ERROR,
+			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+			 errmsg("invalid input syntax for type %s: \"%s\"", "numeric timezone", tzname),
+			 errhint("Numeric time zones must have the numeric part")));
+	}
+
+	dterr = DecodeTimezone(tzname, &tz);
+	if (dterr != 0)
+	{
+		int			type,
+					val;
+		pg_tz	   *tzp;
+
+		if (dterr == DTERR_TZDISP_OVERFLOW)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("numeric time zone \"%s\" out of range", tzname)));
+		else if (dterr != DTERR_BAD_FORMAT)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("time zone \"%s\" not recognized", tzname)));
+
+		type = DecodeTimezoneName(tzname, &val, &tzp);
+
+		if (type == TZNAME_FIXED_OFFSET)
+		{
+			/* fixed-offset abbreviation */
+			tz = -val;
+		}
+		else if (type == TZNAME_DYNTZ)
+		{
+			/* dynamic-offset abbreviation, resolve using specified time */
+			tz = DetermineTimeZoneAbbrevOffset(tm, tzname, tzp);
+		}
+		else
+		{
+			/* full zone name */
+			tz = DetermineTimeZoneOffset(tm, tzp);
+		}
+	}
+
+	return tz;
+}
+#else
 {
 	int			rt;
 	int			tz;
@@ -232,8 +303,8 @@ parse_sane_timezone(struct pg_tm *tm, char *tzname)
 
 		/* DecodeTimezoneAbbrev requires lowercase input */
 		lowzone = downcase_truncate_identifier(tzname,
-						       strlen(tzname),
-						       false);
+							   strlen(tzname),
+							   false);
 		type = DecodeTimezoneAbbrev(0, lowzone, &val, &tzp);
 
 		if (type == TZ || type == DTZ)
@@ -261,6 +332,7 @@ parse_sane_timezone(struct pg_tm *tm, char *tzname)
 
 	return tz;
 }
+#endif
 
 /*
  *	timestamp9_in		- converts "num" to timestamp9
@@ -285,6 +357,9 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	size_t len = strlen(str);
 	int parsed_length;
 	long long ns;
+#if PG16_GE
+	DateTimeErrorExtra extra;
+#endif
 
 	if (len > MAXDATELEN)
 	{
@@ -308,11 +383,14 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	/* then try postgres parsing of up-to microsecond fractional second timestamp (to allow greater flexibility in input) */
 	if (ratio <= 100 ||
 		ParseDateTime(str, lowstr, MAXDATELEN + MAXDATEFIELDS, field, ftype, MAXDATEFIELDS, &nf) != 0 ||
+#if PG16_GE
+		DecodeDateTime(field, ftype, nf, &dtype, p_tm, &fsec, &tz, &extra) != 0)
+#else
 		DecodeDateTime(field, ftype, nf, &dtype, p_tm, &fsec, &tz) != 0)
+#endif
 	{
 		/* it doesn't work - try our own simple parsing then */
 		struct tm tm_ = {0};
-		long long ns;
 		char gmt_offset_str[TZ_STRLEN_MAX + 1] = "";
 		int gmt_offset = 0;
 		int num_read;

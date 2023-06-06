@@ -5,6 +5,8 @@
 #include "fmgr.h"
 #include "postgres.h"
 
+#define PG16_GE (PG_VERSION_NUM >= 160000)
+
 typedef long long timestamp9;
 
 #define DatumGetTimestamp9(X) ((timestamp9) (X))
