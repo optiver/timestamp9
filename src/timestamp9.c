@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "access/hash.h"
+#include "access/xact.h"
 #include "catalog/pg_type.h"
 #include "libpq/pqformat.h"
 #include "utils/array.h"
@@ -46,6 +47,8 @@ PG_FUNCTION_INFO_V1(timestamp9_smaller);
 PG_FUNCTION_INFO_V1(timestamp9_interval_pl);
 PG_FUNCTION_INFO_V1(interval_timestamp9_pl);
 PG_FUNCTION_INFO_V1(timestamp9_interval_mi);
+
+PG_FUNCTION_INFO_V1(timestamp9_nsnow);
 
 #define kT_ns_in_s  (int64_t)1000000000
 #define kT_ns_in_us (int64_t)1000
@@ -724,4 +727,27 @@ Datum timestamp9_interval_mi(PG_FUNCTION_ARGS)
 																	IntervalPGetDatum(&tspan))));
 	new_ts += ts % 1000;
 	PG_RETURN_TIMESTAMP9(new_ts);
+}
+
+Datum
+timestamp9_nsnow(PG_FUNCTION_ARGS)
+{
+	timestamp9 result;
+	struct timespec tv;
+	static TimestampTz current_xact_timestamp;
+	static timestamp9 current_xact_ts9_timestamp;
+
+	if (current_xact_timestamp == GetCurrentTransactionStartTimestamp())
+		PG_RETURN_TIMESTAMP9(current_xact_ts9_timestamp);
+
+	if (clock_gettime(CLOCK_REALTIME, &tv))
+		ereport(ERROR, (errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				errmsg("cannot get current timestamp")));
+
+	result = tv.tv_sec * kT_ns_in_s;
+	result += tv.tv_nsec;
+
+	current_xact_timestamp = GetCurrentTransactionStartTimestamp();
+	current_xact_ts9_timestamp = result;
+	PG_RETURN_TIMESTAMP9(result);
 }

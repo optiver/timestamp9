@@ -70,3 +70,12 @@ CREATE TABLE tbl(ts timestamp9);
 CREATE INDEX ON tbl USING hash (ts);
 
 CREATE TABLE tbl1(ts timestamp9) PARTITION BY HASH (ts);
+
+-- Test that timestamp9_nsnow() returns same value in the same transaction.
+CREATE TABLE ts9_now(col1 timestamp9, col2 timestamp9);
+INSERT INTO ts9_now VALUES (timestamp9_nsnow(), timestamp9_nsnow()), (timestamp9_nsnow(), timestamp9_nsnow());
+BEGIN;
+INSERT INTO ts9_now VALUES (timestamp9_nsnow(), timestamp9_nsnow());
+INSERT INTO ts9_now VALUES (timestamp9_nsnow(), timestamp9_nsnow());
+END;
+SELECT col1=col2 FROM ts9_now;
