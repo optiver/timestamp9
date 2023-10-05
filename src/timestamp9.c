@@ -10,6 +10,7 @@
 #include "libpq/pqformat.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
+#include "utils/elog.h"
 #include "utils/timestamp.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
@@ -40,6 +41,7 @@ PG_FUNCTION_INFO_V1(timestamp9_to_timestamp);
 PG_FUNCTION_INFO_V1(timestamp_to_timestamp9);
 PG_FUNCTION_INFO_V1(timestamp9_to_date);
 PG_FUNCTION_INFO_V1(date_to_timestamp9);
+PG_FUNCTION_INFO_V1(bigint_to_timestamp9);
 
 PG_FUNCTION_INFO_V1(timestamp9_larger);
 PG_FUNCTION_INFO_V1(timestamp9_smaller);
@@ -74,6 +76,12 @@ timestamptz_to_timestamp9_internal(TimestampTz ts)
 	int64 ns;
 	ts += ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
 	ns = ts * 1000;
+	/* Check overflow and validate timestamp9 range. */
+	if (ns / 1000 != ts || !IS_VALID_TIMESTAMP9(ns))
+		ereport(ERROR,
+			(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+			 errmsg("overflow happens when converting TimestampTz to timestamp9"),
+			 errhint("the input timestamp should be within range ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
 	return ns;
 }
 
@@ -96,10 +104,11 @@ date2timestamp9(DateADT dateVal)
 		 * Since dates have the same minimum values as timestamps, only upper
 		 * boundary need be checked for overflow.
 		 */
-		if (dateVal >= (TIMESTAMP9_END_JULIAN - UNIX_EPOCH_JDATE))
+		if (dateVal >= (TIMESTAMP9_END_JULIAN - POSTGRES_EPOCH_JDATE) || dateVal < (TIMESTAMP9_MIN_JULIAN - POSTGRES_EPOCH_JDATE))
 			ereport(ERROR,
 					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-						errmsg("date out of range for timestamp")));
+					 errmsg("date out of range for timestamp9"),
+					 errhint("the input date should be within range ['1700-01-01', '2262-01-01')")));
 
 		j2date(dateVal + POSTGRES_EPOCH_JDATE,
 			   &(tm->tm_year), &(tm->tm_mon), &(tm->tm_mday));
@@ -108,6 +117,9 @@ date2timestamp9(DateADT dateVal)
 		tm->tm_sec = 0;
 		tz = DetermineTimeZoneOffset(tm, session_timezone);
 
+		/*
+		 * It's safe to convert the dateVal to timestamp9 since we've validated that it's within the timestamp9 range.
+		 */
 		result = dateVal * USECS_PER_DAY * kT_ns_in_us + tz * USECS_PER_SEC * kT_ns_in_us +
 			(POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * USECS_PER_DAY * kT_ns_in_us;
 	}
@@ -374,6 +386,12 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	{
 		if ((size_t)parsed_length == len)
 		{
+			if (!IS_VALID_TIMESTAMP9(ns))
+				ereport(ERROR,
+					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					 errmsg("timestamp9 is out of range"),
+					 errhint("the input nanoseconds should be within range [%ld, %ld) which is corresponding to ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')",
+						 MIN_TIMESTAMP9, END_TIMESTAMP9)));
 			PG_RETURN_TIMESTAMP9(ns);
 		}
 	}
@@ -420,7 +438,16 @@ timestamp9_in(PG_FUNCTION_ARGS)
 			tt = timegm(&tm_);
 			tt = tt + tm_.tm_gmtoff + gmt_offset;
 
-			result = (long long)tt * kT_ns_in_s + (ns * ratio);
+			result = (long long)tt * kT_ns_in_s;
+
+			/* Check overflow and validate the range. */
+			if (result / kT_ns_in_s != tt || !IS_VALID_TIMESTAMP9(result))
+				ereport(ERROR, (errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+						errmsg("timestamp9 is out of range"),
+						errhint("the input timestamp should be within the range ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
+
+			/* We don't need to validate the nanoseconds part if the date time has already been within the range. */
+			result += (ns * ratio);
 		}
 		else
 		{
@@ -446,6 +473,11 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		}
 		pg_ts += ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
 		result = pg_ts * 1000;
+		/* Check overflow and validate the range. */
+		if (result / 1000 != pg_ts || !IS_VALID_TIMESTAMP9(result))
+			ereport(ERROR, (errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					errmsg("timestamp9 is out of range"),
+					errhint("the input timestamp should be within the range ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
 		break;
 	}
 	default:
@@ -521,8 +553,13 @@ Datum
 timestamp9_recv(PG_FUNCTION_ARGS)
 {
 	StringInfo buf = (StringInfo) PG_GETARG_POINTER(0);
-
-	PG_RETURN_TIMESTAMP9((timestamp9) pq_getmsgint64(buf));
+	timestamp9 ts9 = (timestamp9) pq_getmsgint64(buf);
+	if (!IS_VALID_TIMESTAMP9(ts9))
+		ereport(ERROR,
+			(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+			 errmsg("timestamp9 out of range"),
+			 errhint("the input timestamp should be within the range ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')")));
+	PG_RETURN_TIMESTAMP9(ts9);
 }
 
 /*
@@ -625,6 +662,12 @@ Datum timestamp_to_timestamp9(PG_FUNCTION_ARGS)
 	ts += ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
 	ns = ts * 1000;
 
+	/* Check overflow and validate the range. */
+	if (ns / 1000 != ts || !IS_VALID_TIMESTAMP9(ns))
+		ereport(ERROR, (errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				errmsg("timestamp9 out of range"),
+				errhint("the input timestamp should be within range: ['1700-01-01 00:00:00.000000000', '2262-01-01 00:00:00.000000000')")));
+
 	PG_RETURN_TIMESTAMP9(ns);
 }
 
@@ -654,6 +697,17 @@ Datum date_to_timestamp9(PG_FUNCTION_ARGS)
 	DateADT date = PG_GETARG_DATEADT(0);
 	timestamp9 ts = date2timestamp9(date);
 	PG_RETURN_TIMESTAMP9(ts);
+}
+
+Datum bigint_to_timestamp9(PG_FUNCTION_ARGS)
+{
+	long long bigint = PG_GETARG_INT64(0);
+	if (!IS_VALID_TIMESTAMP9(bigint))
+		ereport(ERROR, (errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				errmsg("timestamp9 out of range"),
+				errhint("the input bigint should be within range [%ld, %ld) which is corresponding to ['1700-01-01 00:00:00.000000000 +0000', '2262-01-01 00:00:00.000000000 +0000')",
+					MIN_TIMESTAMP9, END_TIMESTAMP9)));
+	PG_RETURN_TIMESTAMP9(bigint);
 }
 
 Datum timestamp9_larger(PG_FUNCTION_ARGS)

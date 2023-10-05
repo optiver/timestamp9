@@ -15,7 +15,17 @@ typedef long long timestamp9;
 #define PG_GETARG_TIMESTAMP9(n)	DatumGetTimestamp9(PG_GETARG_DATUM(n))
 #define PG_RETURN_TIMESTAMP9(x)	return Timestamp9GetDatum(x)
 
-#define TIMESTAMP9_END_JULIAN (2547238)	/* == date2j(2262, 1, 1) */
+#define TIMESTAMP9_END_JULIAN (2547239) /* == date2j(2262, 1, 1) */
+#define TIMESTAMP9_MIN_JULIAN (2341973) /* == date2j(1700, 1, 1) */
+
+/* Timestamp limits */
+#define MIN_TIMESTAMP9  INT64CONST(-8520336000000000000)
+/* == (TIMESTAMP9_MIN_JULIAN - UNIX_EPOCH_JDATE) * (nanoseconds per day) */
+#define END_TIMESTAMP9	INT64CONST(9214646400000000000)
+/* == (TIMESTAMP9_END_JULIAN - UNIX_EPOCH_JDATE) * (nanoseconds per day) */
+
+/* Range-check a timestamp9 */
+#define IS_VALID_TIMESTAMP9(t) (MIN_TIMESTAMP9 <= (t) && (t) < END_TIMESTAMP9)
 
 extern Datum timestamp9_in(PG_FUNCTION_ARGS);
 extern Datum timestamp9_out(PG_FUNCTION_ARGS);
