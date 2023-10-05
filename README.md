@@ -3,7 +3,7 @@ An efficient nanosecond precision timestamp type for Postgres
 
 ## Build & install
 ```
-git clone https://github.com/fvannee/timestamp9.git
+git clone https://github.com/optiver/timestamp9.git
 cd timestamp9
 mkdir build
 cd build
