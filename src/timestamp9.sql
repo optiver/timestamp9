@@ -224,3 +224,21 @@ CREATE OPERATOR + (
 	PROCEDURE = interval_timestamp9_pl,
 	COMMUTATOR = +
 	);
+
+-- New functions added in version 1.5.0
+
+CREATE FUNCTION timestamp9_now() RETURNS timestamp9 AS
+'$libdir/timestamp9'
+	LANGUAGE c VOLATILE STRICT PARALLEL SAFE;
+
+CREATE FUNCTION timestamp9_diff(timestamp9, timestamp9) RETURNS interval AS
+'$libdir/timestamp9'
+	LANGUAGE c IMMUTABLE STRICT PARALLEL SAFE LEAKPROOF;
+
+CREATE FUNCTION timestamp9_epoch(timestamp9) RETURNS double precision AS
+'$libdir/timestamp9'
+	LANGUAGE c IMMUTABLE STRICT PARALLEL SAFE LEAKPROOF;
+
+CREATE FUNCTION epoch_to_timestamp9(double precision) RETURNS timestamp9 AS
+'$libdir/timestamp9'
+	LANGUAGE c IMMUTABLE STRICT PARALLEL SAFE LEAKPROOF;

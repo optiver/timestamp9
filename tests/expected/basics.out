@@ -242,3 +242,79 @@ select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 microseco
 CREATE TABLE tbl(ts timestamp9);
 CREATE INDEX ON tbl USING hash (ts);
 CREATE TABLE tbl1(ts timestamp9) PARTITION BY HASH (ts);
+-- Test NULL handling
+SELECT NULL::timestamp9 IS NULL;
+ ?column?
+----------
+ t
+(1 row)
+
+SELECT NULL::timestamp9 = NULL::timestamp9;
+ ?column?
+----------
+
+(1 row)
+
+SELECT '2019-09-19'::timestamp9 = NULL::timestamp9;
+ ?column?
+----------
+
+(1 row)
+
+-- Test bigint boundary values
+SELECT 0::bigint::timestamp9;
+             timestamp9
+-------------------------------------
+ 1970-01-01 02:00:00.000000000 +0200
+(1 row)
+
+SELECT 1::bigint::timestamp9;
+             timestamp9
+-------------------------------------
+ 1970-01-01 02:00:00.000000001 +0200
+(1 row)
+
+-- Test invalid input rejection
+SELECT ''::timestamp9;
+ERROR:  invalid input format for timestamp9, required format y-m-d h:m:s.ns [+tz] ""
+SELECT 'hello'::timestamp9;
+ERROR:  invalid input format for timestamp9, required format y-m-d h:m:s.ns [+tz] "hello"
+SELECT '2019-13-01 00:00:00'::timestamp9;
+ERROR:  date field value out of range: "2019-13-01 00:00:00"
+-- Test cast functions
+SELECT '2019-09-19 08:30:05.123456789 +0200'::timestamp9::timestamptz;
+        timestamptz
+-------------------------------
+ 2019-09-19 08:30:05.123456+02
+(1 row)
+
+SELECT '2019-09-19 08:30:05.123456789 +0200'::timestamp9::timestamp;
+         timestamp
+----------------------------
+ 2019-09-19 08:30:05.123456
+(1 row)
+
+SELECT '2019-09-19 08:30:05.123456789 +0200'::timestamp9::date;
+    date
+------------
+ 2019-09-19
+(1 row)
+
+SELECT '2019-09-19 08:30:05.123456789 +0200'::timestamp9::bigint;
+     int8
+----------------
+ 1568881805123456789
+(1 row)
+
+-- Test interval arithmetic edge cases
+SELECT '1970-01-01 00:00:00 +0000'::timestamp9 + interval '1 second';
+             ?column?
+-------------------------------------
+ 1970-01-01 02:00:01.000000000 +0200
+(1 row)
+
+SELECT '2262-04-11 23:47:16.854775807 +0000'::timestamp9 - interval '1 second';
+             ?column?
+-------------------------------------
+ 2262-04-12 01:47:15.854775807 +0200
+(1 row)

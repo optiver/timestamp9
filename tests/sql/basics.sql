@@ -70,3 +70,27 @@ CREATE TABLE tbl(ts timestamp9);
 CREATE INDEX ON tbl USING hash (ts);
 
 CREATE TABLE tbl1(ts timestamp9) PARTITION BY HASH (ts);
+
+-- Test NULL handling
+SELECT NULL::timestamp9 IS NULL;
+SELECT NULL::timestamp9 = NULL::timestamp9;
+SELECT '2019-09-19'::timestamp9 = NULL::timestamp9;
+
+-- Test bigint boundary values
+SELECT 0::bigint::timestamp9;
+SELECT 1::bigint::timestamp9;
+
+-- Test invalid input rejection
+SELECT ''::timestamp9;
+SELECT 'hello'::timestamp9;
+SELECT '2019-13-01 00:00:00'::timestamp9;
+
+-- Test cast functions
+SELECT '2019-09-19 08:30:05.123456789 +0200'::timestamp9::timestamptz;
+SELECT '2019-09-19 08:30:05.123456789 +0200'::timestamp9::timestamp;
+SELECT '2019-09-19 08:30:05.123456789 +0200'::timestamp9::date;
+SELECT '2019-09-19 08:30:05.123456789 +0200'::timestamp9::bigint;
+
+-- Test interval arithmetic edge cases
+SELECT '1970-01-01 00:00:00 +0000'::timestamp9 + interval '1 second';
+SELECT '2262-04-11 23:47:16.854775807 +0000'::timestamp9 - interval '1 second';

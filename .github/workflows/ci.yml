@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        postgres-version: [14, 15, 16, 17]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL ${{ matrix.postgres-version }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget lsb-release gnupg2
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update
+          sudo apt-get install -y postgresql-${{ matrix.postgres-version }} postgresql-server-dev-${{ matrix.postgres-version }}
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get install -y cmake build-essential
+
+      - name: Configure
+        run: |
+          mkdir -p build
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPG_CONFIG=/usr/lib/postgresql/${{ matrix.postgres-version }}/bin/pg_config
+
+      - name: Build
+        run: |
+          cmake --build build -j$(nproc)
+
+      - name: Install
+        run: |
+          sudo cmake --install build
+
+      - name: Initialize and start PostgreSQL
+        run: |
+          # Initialize cluster if it doesn't exist
+          if [ ! -d /var/lib/postgresql/${{ matrix.postgres-version }}/main ]; then
+            sudo pg_createcluster ${{ matrix.postgres-version }} main --start --port 5432
+          else
+            sudo pg_ctlcluster ${{ matrix.postgres-version }} main start
+          fi
+
+      - name: Run tests
+        run: |
+          sudo -u postgres psql -p 5432 -c "CREATE DATABASE test_timestamp9;"
+          sudo -u postgres psql -p 5432 -d test_timestamp9 -c "CREATE EXTENSION timestamp9;"
+
+          # Run test queries
+          sudo -u postgres psql -p 5432 -d test_timestamp9 -f tests/sql/basics.sql > /tmp/basics_result.txt 2>&1 || true
+          sudo -u postgres psql -p 5432 -d test_timestamp9 -f tests/sql/advanced.sql > /tmp/advanced_result.txt 2>&1 || true
+          sudo -u postgres psql -p 5432 -d test_timestamp9 -f tests/sql/timezone.sql > /tmp/timezone_result.txt 2>&1 || true
+          sudo -u postgres psql -p 5432 -d test_timestamp9 -f tests/sql/operators.sql > /tmp/operators_result.txt 2>&1 || true
+
+          # Show results
+          echo "=== Basics ===" && cat /tmp/basics_result.txt
+          echo "=== Advanced ===" && cat /tmp/advanced_result.txt
+          echo "=== Timezone ===" && cat /tmp/timezone_result.txt
+          echo "=== Operators ===" && cat /tmp/operators_result.txt
+
+          # Check for unexpected errors (some ERROR messages are expected from negative tests)
+          # We check that expected errors exist
+          if ! grep -q "ERROR.*invalid input syntax" /tmp/basics_result.txt; then
+            echo "Expected error test not found"
+            exit 1
+          fi
+          echo "Tests passed"

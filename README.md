@@ -1,101 +1,251 @@
-## Extension timestamp9
-An efficient nanosecond precision timestamp type for Postgres
+# timestamp9
 
-## Build & install
-```
+A PostgreSQL extension providing a **nanosecond-precision timestamp data type** for applications requiring higher precision than the built-in `timestamp` type (which is limited to microseconds).
+
+## Why timestamp9?
+
+PostgreSQL's built-in `timestamptz` and `timestamp` types store timestamps with microsecond precision (6 decimal places). While sufficient for most applications, certain domains require nanosecond precision:
+
+- **High-frequency trading (HFT)** - Timestamps from exchange feeds often include nanosecond precision
+- **Financial systems** - Accurate event ordering across distributed systems
+- **Scientific data** - High-resolution sensor data and measurements
+- **Performance profiling** - Sub-microsecond timing for code execution
+
+### Comparison with Alternatives
+
+| Type | Precision | Storage | Operators | Indexes | Casts |
+|------|-----------|----------|-----------|---------|-------|
+| `timestamp9` | Nanosecond (9 digits) | 8 bytes | ✓ | B-tree, Hash | ✓ |
+| `timestamptz` | Microsecond (6 digits) | 8 bytes | ✓ | B-tree, Hash, GiST | ✓ |
+| `bigint` | None (raw ns) | 8 bytes | ✗ | B-tree | Manual |
+
+Using `bigint` for nanoseconds works but lacks:
+- Comparison operators (`<`, `>`, `=`, etc.)
+- Type casts to/from `timestamp`, `timestamptz`, `date`
+- Aggregate functions (`min`, `max`)
+- Index operator classes
+
+`timestamp9` provides all of these as a first-class PostgreSQL type.
+
+## Supported PostgreSQL Versions
+
+- PostgreSQL 14
+- PostgreSQL 15
+- PostgreSQL 16
+- PostgreSQL 17
+
+## Installation
+
+### Linux / macOS
+
+```bash
+# Clone the repository
 git clone https://github.com/optiver/timestamp9.git
 cd timestamp9
-mkdir build
-cd build
-cmake ..
-# or: cmake .. -DPG_CONFIG=/path/to/pg_config
+
+# Build
+mkdir build && cd build
+cmake .. -DPG_CONFIG=/path/to/pg_config
 make
+
+# Install (requires superuser)
 sudo make install
 ```
 
-## Usage
-Internally, timestamp9 is stored in a 64-bit number as the number of nanoseconds since the UNIX epoch. This means the minimum and maximum representable time is:
+The `pg_config` path is typically:
+- `/usr/lib/postgresql/16/bin/pg_config` (Debian/Ubuntu)
+- `/usr/pgsql-16/bin/pg_config` (RHEL/CentOS)
+- `/usr/local/bin/pg_config` (Homebrew on macOS)
 
-```
-postgres=# select 0::bigint::timestamp9;
-             timestamp9
--------------------------------------
- 1970-01-01 01:00:00.000000000 +0100
-(1 row)
+### Windows
 
-postgres=# select 9223372036854775807::timestamp9;
-             timestamp9
--------------------------------------
- 2262-04-12 01:47:16.854775807 +0200
-(1 row)
+1. Install PostgreSQL with development headers
+2. Ensure CMake and Visual Studio (or MSVC) are installed
+3. Run:
+   ```cmd
+   mkdir build
+   cd build
+   cmake .. -DPG_CONFIG="C:\PostgreSQL\16\bin\pg_config"
+   cmake --build . --config Release
+   cmake --install . --config Release
+   ```
 
-```
+## Quick Start
 
-Timestamp input can be given either as the number of nanoseconds since Jan 1st 1970, which can be casted to timestamp9 as above, or it can be casted from text format. Both regular Postgres timestamptz text format, as well as a custom nanosecond text format are supported as inputs.
-```
-postgres=# select '2019-09-19 08:30:05.123456789 +0200'::timestamp9;
-             timestamp9
--------------------------------------
- 2019-09-19 08:30:05.123456789 +0200
-(1 row)
+```sql
+-- Enable the extension
+CREATE EXTENSION timestamp9;
 
-postgres=# select '2019-09-19 08:30:05'::timestamp9;
-             timestamp9
--------------------------------------
- 2019-09-19 08:30:05.000000000 +0200
-(1 row)
-```
+-- Create a table with nanosecond timestamps
+CREATE TABLE events (
+    id serial PRIMARY KEY,
+    ts timestamp9 NOT NULL,
+    data text
+);
 
-A subset of the default operators and conversions is supported for timestamp9 types:
-- Cast from/to timestamp(tz)
-```
-postgres=# select now()::timestamp9::timestamptz::timestamp::timestamp9;
-                 now
--------------------------------------
- 2019-09-19 23:22:07.973781000 +0200
-(1 row)
-```
-- Cast from/to date
-```
-postgres=# select current_date::timestamp9;
-            current_date
--------------------------------------
- 2019-09-19 00:00:00.000000000 +0200
-(1 row)
-```
-- Comparisons like greater than, less than etc. as well as use in btree/hash indices
-```
-postgres=# select '2019-09-19'::timestamp9 < '2019-09-20'::timestamp9, greatest(now()::timestamp9, '2019-01-01'::timestamp9);
- ?column? |              greatest
-----------+-------------------------------------
- t        | 2019-09-19 23:27:21.364791000 +0200
-(1 row)
-```
-- Addition and subtraction of intervals
-```
-postgres=# select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 + interval '1d';
-              ?column?
--------------------------------------
- 2019-09-20 23:00:00.123456789 +0200
-(1 row)
+-- Insert with nanosecond precision
+INSERT INTO events (ts, data) VALUES
+    ('2024-01-15 10:30:45.123456789 +0000', 'Event A'),
+    ('2024-01-15 10:30:45.123456789 +0100', 'Event B');
+
+-- Query with comparisons
+SELECT * FROM events WHERE ts > '2024-01-15 09:00:00 +0000'::timestamp9;
+
+-- Get current time with nanosecond precision
+SELECT timestamp9_now();
+
+-- Convert to/from Unix epoch
+SELECT timestamp9_epoch('2024-01-15 10:30:45.123456789 +0000'::timestamp9);
+SELECT epoch_to_timestamp9(1705315845.123456789);
+
+-- Compute difference between timestamps
+SELECT timestamp9_diff('2024-01-15 10:30:45'::timestamp9, '2024-01-15 10:30:46'::timestamp9);
 ```
 
-# License
+## Type Reference
 
----
+### Storage
 
-Timestamp9 is:
+`timestamp9` is stored as a 64-bit signed integer representing nanoseconds since Unix epoch (1970-01-01 00:00:00 UTC).
 
-Copyright 2023 Optiver IP B.V.
+- **Minimum value**: 0 (Unix epoch)
+- **Maximum value**: 9223372036854775807 (~ year 2262)
+- **Storage size**: 8 bytes
 
-Licensed under the MIT License (the "License"); you may not use this file except in compliance
-with the License. You may obtain a copy of the License at
+### Input Formats
 
+The `timestamp9` type accepts multiple input formats:
+
+```sql
+-- Raw nanoseconds since Unix epoch
+SELECT 1705315845123456789::timestamp9;
+
+-- ISO-style timestamp with nanoseconds
+SELECT '2024-01-15 10:30:45.123456789 +0000'::timestamp9;
+
+-- Without timezone (uses session timezone)
+SELECT '2024-01-15 10:30:45.123456789'::timestamp9;
+
+-- Various timezone formats
+SELECT '2024-01-15 10:30:45.123456789 +00:00'::timestamp9;
+SELECT '2024-01-15 10:30:45.123456789 UTC'::timestamp9;
+SELECT '2024-01-15 10:30:45.123456789 America/New_York'::timestamp9;
 ```
-https://opensource.org/license/mit/
+
+## Functions
+
+| Function | Description |
+|----------|-------------|
+| `timestamp9_now()` | Returns current timestamp with nanosecond precision |
+| `timestamp9_diff(ts1, ts2)` | Returns interval between `ts2` and `ts1` |
+| `timestamp9_epoch(ts)` | Converts timestamp9 to Unix epoch as `double precision` |
+| `epoch_to_timestamp9(double)` | Converts Unix epoch to timestamp9 |
+
+### Cast Functions
+
+Casts to/from standard types are provided:
+
+```sql
+-- To timestamp9
+SELECT '2024-01-15 10:30:45'::timestamptz::timestamp9;
+SELECT '2024-01-15'::date::timestamp9;
+SELECT 1705315845123456789::bigint::timestamp9;
+
+-- From timestamp9
+SELECT ts::timestamptz FROM events;
+SELECT ts::timestamp FROM events;
+SELECT ts::date FROM events;
+SELECT ts::bigint FROM events;
 ```
 
-Unless required by applicable law or explicitly agreed by an authorized representative of Optiver IP B.V. in
-writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-CONDITIONS OF ANY KIND, either express or implied. Please see the License for the specific language governing
-permissions and limitations under the License.
+### Aggregate Functions
+
+```sql
+SELECT min(ts), max(ts) FROM events;
+```
+
+## Operators
+
+### Comparison Operators
+
+| Operator | Description |
+|----------|-------------|
+| `=` | Equal |
+| `<>` | Not equal |
+| `<` | Less than |
+| `<=` | Less than or equal |
+| `>` | Greater than |
+| `>=` | Greater than or equal |
+
+### Arithmetic Operators
+
+| Operator | Description |
+|----------|-------------|
+| `timestamp9 + interval` | Add interval |
+| `interval + timestamp9` | Add interval |
+| `timestamp9 - interval` | Subtract interval |
+
+```sql
+SELECT '2024-01-15 10:30:45'::timestamp9 + interval '1 hour';
+SELECT '2024-01-15 10:30:45'::timestamp9 - interval '1 day';
+```
+
+## Indexing
+
+### B-tree Index (Default)
+
+```sql
+CREATE INDEX idx_events_ts ON events USING btree (ts);
+```
+
+### Hash Index
+
+```sql
+CREATE INDEX idx_events_ts_hash ON events USING hash (ts);
+```
+
+## Performance Considerations
+
+### Storage
+
+- 8 bytes per value (same as `bigint` and `timestamptz`)
+- No additional overhead compared to storing raw nanoseconds as `bigint`
+
+### When to Use timestamp9
+
+- You need **nanosecond precision** in timestamps
+- You want to perform **comparisons, sorting, and aggregations** directly in SQL
+- You need to **cast between timestamp types** without manual conversion
+- You want **index support** for fast lookups
+
+### When NOT to Use timestamp9
+
+- Microsecond precision is sufficient (use built-in `timestamptz`)
+- You need to store timestamps beyond year 2262
+- You need to store the original timezone (timestamp9 stores UTC only)
+- You need timezone-aware range types
+
+### Security Considerations
+
+- Nanosecond timestamps can reveal precise timing information
+- Consider precision requirements for your use case
+- The type validates input range to prevent overflow
+
+## Limitations
+
+- **Date range**: Limited to years 1970 through ~2262 due to int64 storage
+- **Timezone**: Does not store the original timezone; always outputs in session timezone
+- **Range types**: No `tsrange9` or `tstzrange9` types (future enhancement)
+- **GiST index**: Not supported (future enhancement)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on contributing to timestamp9.
+
+## License
+
+Apache License 2.0 - See [LICENSE](LICENSE) for details.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.

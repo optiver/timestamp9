@@ -41,13 +41,11 @@ set(PG_REGRESS_OPTS_INOUT
 
 set(PG_REGRESS_SHARED_OPTS_INOUT
   --inputdir=${TEST_INPUT_DIR}/shared
-  --outputdir=${TEST_OUTPUT_DIR}/shared
-  --load-extension=timescaledb)
+  --outputdir=${TEST_OUTPUT_DIR}/shared)
 
 set(PG_ISOLATION_REGRESS_OPTS_INOUT
   --inputdir=${TEST_INPUT_DIR}/isolation
-  --outputdir=${TEST_OUTPUT_DIR}/isolation
-  --load-extension=timescaledb)
+  --outputdir=${TEST_OUTPUT_DIR}/isolation)
 
 set(PG_REGRESS_OPTS_TEMP_INSTANCE
   --port=${TEST_PGPORT_TEMP_INSTANCE}

@@ -44,6 +44,9 @@ extern Datum timestamp9_interval_pl(PG_FUNCTION_ARGS);
 extern Datum interval_timestamp9_pl(PG_FUNCTION_ARGS);
 extern Datum timestamp9_interval_mi(PG_FUNCTION_ARGS);
 
-int parse_gmt_offset(const char*, bool*);
+extern Datum timestamp9_now(PG_FUNCTION_ARGS);
+extern Datum timestamp9_diff(PG_FUNCTION_ARGS);
+extern Datum timestamp9_epoch(PG_FUNCTION_ARGS);
+extern Datum epoch_to_timestamp9(PG_FUNCTION_ARGS);
 
 long long parse_fractional_ratio(const char*, size_t, bool*);

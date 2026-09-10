@@ -47,12 +47,29 @@ PG_FUNCTION_INFO_V1(timestamp9_interval_pl);
 PG_FUNCTION_INFO_V1(interval_timestamp9_pl);
 PG_FUNCTION_INFO_V1(timestamp9_interval_mi);
 
+PG_FUNCTION_INFO_V1(timestamp9_now);
+PG_FUNCTION_INFO_V1(timestamp9_diff);
+PG_FUNCTION_INFO_V1(timestamp9_epoch);
+PG_FUNCTION_INFO_V1(epoch_to_timestamp9);
+
 #define kT_ns_in_s  (int64_t)1000000000
 #define kT_ns_in_us (int64_t)1000
+
+/* Buffer size for timestamp9_out: "%Y-%m-%d %H:%M:%S.nnnnnnnnn +zzzz\0" = 40 chars + null */
+#define TIMESTAMP9_OUT_BUF_LEN 41
 
 #define NO_COLON_TZ_OFFSET_LEN (size_t)4 /* length of string 0200 */
 #define COLON_TZ_OFFSET_LEN (size_t)5 /* length of string 02:00 */
 
+/*
+ * Convert timestamp9 (nanoseconds since Unix epoch) to PostgreSQL TimestampTz
+ * (microseconds since PostgreSQL epoch, which is 2000-01-01).
+ *
+ * The conversion involves two steps:
+ *   1. Divide by 1000 to convert nanoseconds to microseconds.
+ *   2. Subtract the offset between Unix epoch (1970-01-01) and
+ *      PostgreSQL epoch (2000-01-01), which is 10957 days in microseconds.
+ */
 static TimestampTz
 timestamp9_to_timestamptz_internal(timestamp9 ts9)
 {
@@ -68,6 +85,14 @@ timestamp9_to_timestamptz_internal(timestamp9 ts9)
 	return us;
 }
 
+/*
+ * Convert PostgreSQL TimestampTz (microseconds since PostgreSQL epoch)
+ * to timestamp9 (nanoseconds since Unix epoch).
+ *
+ * This is the inverse of timestamp9_to_timestamptz_internal.
+ * The offset between PostgreSQL epoch and Unix epoch is added back,
+ * then microseconds are scaled to nanoseconds by multiplying by 1000.
+ */
 static timestamp9
 timestamptz_to_timestamp9_internal(TimestampTz ts)
 {
@@ -411,7 +436,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 			}
 			else
 			{
-				/* If we haven't specified the timezone, let's use session_timezone to determin the gmt_offset. */
+				/* If we haven't specified the timezone, let's use session_timezone to determine the gmt_offset. */
 				gmt_offset = DetermineTimeZoneOffset(&temp_tm, session_timezone);
 			}
 
@@ -421,6 +446,15 @@ timestamp9_in(PG_FUNCTION_ARGS)
 			tt = tt + tm_.tm_gmtoff + gmt_offset;
 
 			result = (long long)tt * kT_ns_in_s + (ns * ratio);
+
+			/* Validate that the result is within the int64 range */
+			if (result < -kT_ns_in_s * (int64_t)SECS_PER_DAY * 365 * 200 ||
+				result > kT_ns_in_s * (int64_t)SECS_PER_DAY * 365 * 200)
+			{
+				ereport(ERROR,
+						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+							errmsg("timestamp9 value out of range: \"%s\"", str)));
+			}
 		}
 		else
 		{
@@ -460,24 +494,24 @@ timestamp9_in(PG_FUNCTION_ARGS)
 
 long long parse_fractional_ratio(const char* str, size_t len, bool* fractional_valid)
 {
-	bool count = false;
+	bool found_decimal = false;
 	long long ratio = 1000000000ll;
 	size_t i = 0;
 	*fractional_valid = false;
 
 	while (i <= len)
 	{
-		if (count && (str[i] == ' ' || str[i] == '+' || str[i] == '-' || str[i] == 'Z' || str[i] == '\0'))
+		if (found_decimal && (str[i] == ' ' || str[i] == '+' || str[i] == '-' || str[i] == 'Z' || str[i] == '\0'))
 		{
 			*fractional_valid = (ratio > 0);
 			break;
 		}
 
-		if (count)
+		if (found_decimal)
 			ratio /= 10;
 
 		if (str[i] == '.')
-			count = true;
+			found_decimal = true;
 		i++;
 	}
 	return ratio;
@@ -490,7 +524,7 @@ Datum
 timestamp9_out(PG_FUNCTION_ARGS)
 {
 	timestamp9 arg1 = PG_GETARG_TIMESTAMP9(0);
-	char *result = (char *) palloc(41);
+	char *result = (char *) palloc(TIMESTAMP9_OUT_BUF_LEN);
 	time_t secs = (time_t)(arg1 / kT_ns_in_s);
 	struct pg_tm *tm_;
 	size_t offset;
@@ -507,7 +541,7 @@ timestamp9_out(PG_FUNCTION_ARGS)
 			(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
 			 errmsg("timestamp9 out of range")));
 
-	offset = pg_strftime(result, 41, "%Y-%m-%d %H:%M:%S", tm_);
+	offset = pg_strftime(result, TIMESTAMP9_OUT_BUF_LEN, "%Y-%m-%d %H:%M:%S", tm_);
 	offset += sprintf(result + offset, ".%09lld", mod);
 	offset += pg_strftime(result + offset, 41, " %z", tm_);
 
@@ -680,9 +714,20 @@ Datum timestamp9_interval_pl(PG_FUNCTION_ARGS)
 {
 	timestamp9 ts = PG_GETARG_TIMESTAMP9(0);
 	Interval* intvl = PG_GETARG_INTERVAL_P(1);
+	TimestampTz tstz;
+	timestamp9 new_ts;
 
-	TimestampTz tstz = timestamp9_to_timestamptz_internal(ts);
-	timestamp9 new_ts = timestamptz_to_timestamp9_internal(
+	/* Validate input timestamp9 is in valid range before conversion */
+	if (ts < -((int64_t)POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC * 1000 ||
+		ts > ((int64_t)POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC * 1000)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					errmsg("timestamp9 value out of range")));
+	}
+
+	tstz = timestamp9_to_timestamptz_internal(ts);
+	new_ts = timestamptz_to_timestamp9_internal(
 				DatumGetTimestampTz(
 					DirectFunctionCall2(timestamptz_pl_interval,
 										TimestampTzGetDatum(tstz),
@@ -714,6 +759,15 @@ Datum timestamp9_interval_mi(PG_FUNCTION_ARGS)
 	TimestampTz tstz;
 	timestamp9 new_ts;
 
+	/* Validate input timestamp9 is in valid range before conversion */
+	if (ts < -((int64_t)POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC * 1000 ||
+		ts > ((int64_t)POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC * 1000)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					errmsg("timestamp9 value out of range")));
+	}
+
 	tspan.month = -intvl->month;
 	tspan.day = -intvl->day;
 	tspan.time = -intvl->time;
@@ -724,4 +778,85 @@ Datum timestamp9_interval_mi(PG_FUNCTION_ARGS)
 																	IntervalPGetDatum(&tspan))));
 	new_ts += ts % 1000;
 	PG_RETURN_TIMESTAMP9(new_ts);
+}
+
+/*
+ *	timestamp9_now		- returns current time as timestamp9 (nanoseconds since Unix epoch)
+ */
+Datum
+timestamp9_now(PG_FUNCTION_ARGS)
+{
+	TimestampTz ts = GetCurrentTimestamp();
+	timestamp9 ns = timestamptz_to_timestamp9_internal(ts);
+	PG_RETURN_TIMESTAMP9(ns);
+}
+
+/*
+ *	timestamp9_diff		- returns the interval between two timestamp9 values
+ *
+ * Computes ts2 - ts1 as a PostgreSQL Interval. Since timestamp9 stores
+ * nanoseconds and Interval uses months/days/time, we convert the nanosecond
+ * difference into the time component of the interval.
+ */
+Datum
+timestamp9_diff(PG_FUNCTION_ARGS)
+{
+	timestamp9 ts1 = PG_GETARG_TIMESTAMP9(0);
+	timestamp9 ts2 = PG_GETARG_TIMESTAMP9(1);
+	Interval *result;
+	int64 diff_ns = ts2 - ts1;
+	int64 diff_us;
+	int64 days;
+	int64 remaining_us;
+
+	result = (Interval *) palloc(sizeof(Interval));
+
+	/* Convert nanosecond difference to microseconds */
+	diff_us = diff_ns / 1000;
+
+	/* Split into days and remaining time */
+	if (diff_us >= 0)
+	{
+		days = diff_us / USECS_PER_DAY;
+		remaining_us = diff_us % USECS_PER_DAY;
+	}
+	else
+	{
+		/* For negative differences, use ceiling division for days */
+		days = -((-diff_us + USECS_PER_DAY - 1) / USECS_PER_DAY);
+		remaining_us = diff_us - days * USECS_PER_DAY;
+	}
+
+	result->month = 0;
+	result->day = (int32) days;
+	result->time = remaining_us;
+
+	PG_RETURN_INTERVAL_P(result);
+}
+
+/*
+ *	timestamp9_epoch	- returns the Unix epoch time as double precision
+ *
+ * Converts a timestamp9 (nanoseconds since Unix epoch) to a floating-point
+ * number representing seconds since Unix epoch, preserving sub-second precision.
+ */
+Datum
+timestamp9_epoch(PG_FUNCTION_ARGS)
+{
+	timestamp9 ts = PG_GETARG_TIMESTAMP9(0);
+	double result = (double) ts / (double) kT_ns_in_s;
+	PG_RETURN_FLOAT8(result);
+}
+
+/*
+ *	epoch_to_timestamp9	- converts a Unix epoch (double precision) to timestamp9
+ *
+ * Inverse of timestamp9_epoch. Converts seconds since Unix epoch to nanoseconds.
+ */
+Datum
+epoch_to_timestamp9(PG_FUNCTION_ARGS)
+{
+	double epoch = PG_GETARG_FLOAT8(0);
+	timestamp9 ns = (timestamp9) (epoch * (double) kT_ns_in_s);
+	PG_RETURN_TIMESTAMP9(ns);
 }
