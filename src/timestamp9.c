@@ -2,11 +2,13 @@
 #include "postgres.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <time.h>
 
 #include "access/hash.h"
 #include "catalog/pg_type.h"
+#include "common/int.h"
 #include "libpq/pqformat.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
@@ -69,18 +71,39 @@ timestamp9_to_timestamptz_internal(timestamp9 ts9)
 }
 
 static timestamp9
-timestamptz_to_timestamp9_internal(TimestampTz ts)
+timestamptz_to_timestamp9_internal(TimestampTz ts, int64 sub_us_ns)
 {
+	int64 us;
 	int64 ns;
-	ts += ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
-	ns = ts * 1000;
+	if (TIMESTAMP_NOT_FINITE(ts) ||
+		pg_add_s64_overflow(ts, (POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC, &us))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					errmsg("timestamp9 out of range")));
+
+	/* Avoid intermediate overflow when the remainder brings the result in range. */
+	if (us > 0 && sub_us_ns < 0)
+	{
+		us--;
+		sub_us_ns += kT_ns_in_us;
+	}
+	else if (us < 0 && sub_us_ns > 0)
+	{
+		us++;
+		sub_us_ns -= kT_ns_in_us;
+	}
+	if (pg_mul_s64_overflow(us, kT_ns_in_us, &ns) ||
+		pg_add_s64_overflow(ns, sub_us_ns, &ns))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+					errmsg("timestamp9 out of range")));
 	return ns;
 }
 
 static timestamp9
 date2timestamp9(DateADT dateVal)
 {
-	timestamp9 result;
+	int64 result;
 	struct pg_tm tt;
 	struct pg_tm* tm = &tt;
 	int tz;
@@ -91,16 +114,6 @@ date2timestamp9(DateADT dateVal)
 					errmsg("date out of range for timestamp")));
 	else
 	{
-		/*
-		 * Date's range is wider than timestamp's, so check for boundaries.
-		 * Since dates have the same minimum values as timestamps, only upper
-		 * boundary need be checked for overflow.
-		 */
-		if (dateVal >= (TIMESTAMP9_END_JULIAN - UNIX_EPOCH_JDATE))
-			ereport(ERROR,
-					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
-						errmsg("date out of range for timestamp")));
-
 		j2date(dateVal + POSTGRES_EPOCH_JDATE,
 			   &(tm->tm_year), &(tm->tm_mon), &(tm->tm_mday));
 		tm->tm_hour = 0;
@@ -108,8 +121,14 @@ date2timestamp9(DateADT dateVal)
 		tm->tm_sec = 0;
 		tz = DetermineTimeZoneOffset(tm, session_timezone);
 
-		result = dateVal * USECS_PER_DAY * kT_ns_in_us + tz * USECS_PER_SEC * kT_ns_in_us +
-			(POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * USECS_PER_DAY * kT_ns_in_us;
+		/* Date's range is wider than timestamp9's, so check both boundaries. */
+		if (pg_add_s64_overflow(dateVal, POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE, &result) ||
+			pg_mul_s64_overflow(result, SECS_PER_DAY, &result) ||
+			pg_add_s64_overflow(result, tz, &result) ||
+			pg_mul_s64_overflow(result, kT_ns_in_s, &result))
+			ereport(ERROR,
+					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+						errmsg("timestamp9 out of range")));
 	}
 
 	return result;
@@ -342,7 +361,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 {
 	char *str = PG_GETARG_CSTRING(0);
 
-	timestamp9 result = 0ll;
+	int64 result = 0ll;
 	fsec_t fsec;
 	struct pg_tm tt;
 	struct pg_tm* p_tm = &tt;
@@ -355,7 +374,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	long long ratio;
 	bool fractional_valid = false;
 	size_t len = strlen(str);
-	int parsed_length;
+	char *endptr;
 	long long ns;
 #if PG16_GE
 	DateTimeErrorExtra extra;
@@ -370,12 +389,15 @@ timestamp9_in(PG_FUNCTION_ARGS)
 	}
 
 	/* first try the raw nanosecond bigint format: eg. 1554809728000100000 */
-	if(sscanf(str, "%lld%n", &ns, &parsed_length) == 1)
+	errno = 0;
+	ns = strtoll(str, &endptr, 10);
+	if (endptr != str && *endptr == '\0')
 	{
-		if ((size_t)parsed_length == len)
-		{
-			PG_RETURN_TIMESTAMP9(ns);
-		}
+		if (errno == ERANGE)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+						errmsg("timestamp9 out of range")));
+		PG_RETURN_TIMESTAMP9(ns);
 	}
 
 	ratio = parse_fractional_ratio(str, len, &fractional_valid);
@@ -395,6 +417,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 		int gmt_offset = 0;
 		int num_read;
 		time_t tt;
+		int64 fractional_ns;
 
 		num_read = sscanf(str, "%d-%d-%d %d:%d:%d.%lld %255s", &tm_.tm_year, &tm_.tm_mon, &tm_.tm_mday, &tm_.tm_hour, &tm_.tm_min, &tm_.tm_sec, &ns, gmt_offset_str);
 		if ((num_read == 7 || num_read == 8) && fractional_valid)
@@ -420,7 +443,22 @@ timestamp9_in(PG_FUNCTION_ARGS)
 			tt = timegm(&tm_);
 			tt = tt + tm_.tm_gmtoff + gmt_offset;
 
-			result = (long long)tt * kT_ns_in_s + (ns * ratio);
+			if (pg_mul_s64_overflow(ns, ratio, &fractional_ns))
+				ereport(ERROR,
+						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+							errmsg("timestamp9 out of range")));
+
+			/* Avoid underflow of whole seconds at the minimum timestamp9. */
+			if (tt < 0 && fractional_ns > 0)
+			{
+				tt++;
+				fractional_ns -= kT_ns_in_s;
+			}
+			if (pg_mul_s64_overflow(tt, kT_ns_in_s, &result) ||
+				pg_add_s64_overflow(result, fractional_ns, &result))
+				ereport(ERROR,
+						(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+							errmsg("timestamp9 out of range")));
 		}
 		else
 		{
@@ -444,8 +482,7 @@ timestamp9_in(PG_FUNCTION_ARGS)
 						errmsg("invalid input format for timestamp9, required format y-m-d h:m:s.ns [+tz] \"%s\"",
 							   str)));
 		}
-		pg_ts += ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
-		result = pg_ts * 1000;
+		result = timestamptz_to_timestamp9_internal(pg_ts, 0);
 		break;
 	}
 	default:
@@ -595,7 +632,7 @@ Datum timestamp9_to_timestamptz(PG_FUNCTION_ARGS)
 Datum timestamptz_to_timestamp9(PG_FUNCTION_ARGS)
 {
 	TimestampTz ts = PG_GETARG_TIMESTAMPTZ(0);
-	timestamp9 ns = timestamptz_to_timestamp9_internal(ts);
+	timestamp9 ns = timestamptz_to_timestamp9_internal(ts, 0);
 
 	PG_RETURN_TIMESTAMP9(ns);
 }
@@ -622,8 +659,7 @@ Datum timestamp_to_timestamp9(PG_FUNCTION_ARGS)
 	timestamp9 ns;
 	TimestampTz ts = PG_GETARG_TIMESTAMP(0);
 	ts = timestamp2timestamptz(ts);
-	ts += ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY * USECS_PER_SEC);
-	ns = ts * 1000;
+	ns = timestamptz_to_timestamp9_internal(ts, 0);
 
 	PG_RETURN_TIMESTAMP9(ns);
 }
@@ -682,12 +718,11 @@ Datum timestamp9_interval_pl(PG_FUNCTION_ARGS)
 	Interval* intvl = PG_GETARG_INTERVAL_P(1);
 
 	TimestampTz tstz = timestamp9_to_timestamptz_internal(ts);
-	timestamp9 new_ts = timestamptz_to_timestamp9_internal(
+	int64 new_ts = timestamptz_to_timestamp9_internal(
 				DatumGetTimestampTz(
 					DirectFunctionCall2(timestamptz_pl_interval,
 										TimestampTzGetDatum(tstz),
-										IntervalPGetDatum(intvl))));
-	new_ts += ts % 1000;
+										IntervalPGetDatum(intvl))), ts % 1000);
 	PG_RETURN_TIMESTAMP9(new_ts);
 }
 
@@ -697,12 +732,11 @@ Datum interval_timestamp9_pl(PG_FUNCTION_ARGS)
 	timestamp9 ts = PG_GETARG_TIMESTAMP9(1);
 
 	TimestampTz tstz = timestamp9_to_timestamptz_internal(ts);
-	timestamp9 new_ts = timestamptz_to_timestamp9_internal(
+	int64 new_ts = timestamptz_to_timestamp9_internal(
 				DatumGetTimestampTz(
 					DirectFunctionCall2(timestamptz_pl_interval,
 										TimestampTzGetDatum(tstz),
-										IntervalPGetDatum(intvl))));
-	new_ts += ts % 1000;
+										IntervalPGetDatum(intvl))), ts % 1000);
 	PG_RETURN_TIMESTAMP9(new_ts);
 }
 
@@ -712,7 +746,7 @@ Datum timestamp9_interval_mi(PG_FUNCTION_ARGS)
 	Interval* intvl = PG_GETARG_INTERVAL_P(1);
 	Interval tspan;
 	TimestampTz tstz;
-	timestamp9 new_ts;
+	int64 new_ts;
 
 	tspan.month = -intvl->month;
 	tspan.day = -intvl->day;
@@ -721,7 +755,6 @@ Datum timestamp9_interval_mi(PG_FUNCTION_ARGS)
 	tstz = timestamp9_to_timestamptz_internal(ts);
 	new_ts = timestamptz_to_timestamp9_internal(DatumGetTimestampTz(DirectFunctionCall2(timestamptz_pl_interval,
 																	TimestampTzGetDatum(tstz),
-																	IntervalPGetDatum(&tspan))));
-	new_ts += ts % 1000;
+																	IntervalPGetDatum(&tspan))), ts % 1000);
 	PG_RETURN_TIMESTAMP9(new_ts);
 }
