@@ -130,11 +130,11 @@ select '9223372036854775807'::timestamp9 + interval '0';
 select '-9223372036854775808'::timestamp9 - interval '0';
 
 -- The final remainder alone can overflow, even when the microseconds fit.
-select '808'::timestamp9 + interval '9223372036.854775 seconds';
-select interval '9223372036.854775 seconds' + '808'::timestamp9;
-select '-809'::timestamp9 - interval '9223372036.854775 seconds';
-select '807'::timestamp9 + interval '9223372036.854775 seconds';
-select '-808'::timestamp9 - interval '9223372036.854775 seconds';
+select '808'::timestamp9 + interval '106751 days 23:47:16.854775';
+select interval '106751 days 23:47:16.854775' + '808'::timestamp9;
+select '-809'::timestamp9 - interval '106751 days 23:47:16.854775';
+select '807'::timestamp9 + interval '106751 days 23:47:16.854775';
+select '-808'::timestamp9 - interval '106751 days 23:47:16.854775';
 
 -- A remainder of the opposite sign can bring the final result exactly into range.
 select '-193'::timestamp9 + interval '106751 days 23:47:16.854776';

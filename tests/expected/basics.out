@@ -382,19 +382,19 @@ select '-9223372036854775808'::timestamp9 - interval '0';
 (1 row)
 
 -- The final remainder alone can overflow, even when the microseconds fit.
-select '808'::timestamp9 + interval '9223372036.854775 seconds';
+select '808'::timestamp9 + interval '106751 days 23:47:16.854775';
 ERROR:  timestamp9 out of range
-select interval '9223372036.854775 seconds' + '808'::timestamp9;
+select interval '106751 days 23:47:16.854775' + '808'::timestamp9;
 ERROR:  timestamp9 out of range
-select '-809'::timestamp9 - interval '9223372036.854775 seconds';
+select '-809'::timestamp9 - interval '106751 days 23:47:16.854775';
 ERROR:  timestamp9 out of range
-select '807'::timestamp9 + interval '9223372036.854775 seconds';
+select '807'::timestamp9 + interval '106751 days 23:47:16.854775';
               ?column?               
 -------------------------------------
  2262-04-11 23:47:16.854775807 +0000
 (1 row)
 
-select '-808'::timestamp9 - interval '9223372036.854775 seconds';
+select '-808'::timestamp9 - interval '106751 days 23:47:16.854775';
               ?column?               
 -------------------------------------
  1677-09-21 00:12:43.145224192 +0000
