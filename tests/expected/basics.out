@@ -242,3 +242,174 @@ select '2019-09-19 23:00:00.123456789 +0200'::timestamp9 - interval '2 microseco
 CREATE TABLE tbl(ts timestamp9);
 CREATE INDEX ON tbl USING hash (ts);
 CREATE TABLE tbl1(ts timestamp9) PARTITION BY HASH (ts);
+-- Test that out-of-range values raise an error instead of silently wrapping around.
+set timezone to 'UTC';
+-- Both boundaries use the full bigint range and round-trip without losing nanoseconds.
+select ts, ts::bigint from (values
+    ('-9223372036854775808'::bigint::timestamp9),
+    ('9223372036854775807'::bigint::timestamp9),
+    ('1677-09-21 00:12:43.145224192 +0000'::timestamp9),
+    ('2262-04-11 23:47:16.854775807 +0000'::timestamp9)
+) as bounds(ts);
+                 ts                  |          ts          
+-------------------------------------+----------------------
+ 1677-09-21 00:12:43.145224192 +0000 | -9223372036854775808
+ 2262-04-11 23:47:16.854775807 +0000 |  9223372036854775807
+ 1677-09-21 00:12:43.145224192 +0000 | -9223372036854775808
+ 2262-04-11 23:47:16.854775807 +0000 |  9223372036854775807
+(4 rows)
+
+-- One nanosecond beyond either boundary must not wrap around.
+select '1677-09-21 00:12:43.145224191 +0000'::timestamp9;
+ERROR:  timestamp9 out of range at character 8
+select '2262-04-11 23:47:16.854775808 +0000'::timestamp9;
+ERROR:  timestamp9 out of range at character 8
+-- Raw numeric input must fit in a bigint and consume the whole string.
+select '-9223372036854775808'::timestamp9, '9223372036854775807'::timestamp9;
+             timestamp9              |             timestamp9              
+-------------------------------------+-------------------------------------
+ 1677-09-21 00:12:43.145224192 +0000 | 2262-04-11 23:47:16.854775807 +0000
+(1 row)
+
+select '9223372036854775808'::timestamp9;
+ERROR:  timestamp9 out of range at character 8
+select '-9223372036854775809'::timestamp9;
+ERROR:  timestamp9 out of range at character 8
+select ' +0001'::timestamp9::bigint;
+ int8 
+------
+    1
+(1 row)
+
+select '2019-09-19'::timestamp9;
+             timestamp9              
+-------------------------------------
+ 2019-09-19 00:00:00.000000000 +0000
+(1 row)
+
+-- The PostgreSQL text parser must use the same range checks.
+select '2262-04-11 23:47:16 +0000'::timestamp9;
+             timestamp9              
+-------------------------------------
+ 2262-04-11 23:47:16.000000000 +0000
+(1 row)
+
+select '3000-01-01'::timestamp9;
+ERROR:  timestamp9 out of range at character 8
+-- Timestamp casts accept the nearest representable microseconds at each boundary.
+select '1677-09-21 00:12:43.145225'::timestamp::timestamp9,
+       '2262-04-11 23:47:16.854775'::timestamp::timestamp9;
+             timestamp9              |             timestamp9              
+-------------------------------------+-------------------------------------
+ 1677-09-21 00:12:43.145225000 +0000 | 2262-04-11 23:47:16.854775000 +0000
+(1 row)
+
+select '1677-09-21 00:12:43.145225 +0000'::timestamptz::timestamp9,
+       '2262-04-11 23:47:16.854775 +0000'::timestamptz::timestamp9;
+             timestamp9              |             timestamp9              
+-------------------------------------+-------------------------------------
+ 1677-09-21 00:12:43.145225000 +0000 | 2262-04-11 23:47:16.854775000 +0000
+(1 row)
+
+select '2362-04-01'::timestamp::timestamp9;
+ERROR:  timestamp9 out of range
+select '2362-04-01'::timestamptz::timestamp9;
+ERROR:  timestamp9 out of range
+select '1600-01-01'::timestamp::timestamp9;
+ERROR:  timestamp9 out of range
+select '1677-09-21 00:12:43.145224'::timestamptz::timestamp9;
+ERROR:  timestamp9 out of range
+select '2262-04-11 23:47:16.854776'::timestamptz::timestamp9;
+ERROR:  timestamp9 out of range
+select 'infinity'::timestamptz::timestamp9;
+ERROR:  timestamp9 out of range
+select '-infinity'::timestamp::timestamp9;
+ERROR:  timestamp9 out of range
+-- Date casts check both bounds after converting from the PostgreSQL epoch.
+select '2262-04-11'::date::timestamp9, '1677-09-22'::date::timestamp9;
+             timestamp9              |             timestamp9              
+-------------------------------------+-------------------------------------
+ 2262-04-11 00:00:00.000000000 +0000 | 1677-09-22 00:00:00.000000000 +0000
+(1 row)
+
+select '2262-04-12'::date::timestamp9;
+ERROR:  timestamp9 out of range
+select '2270-01-01'::date::timestamp9;
+ERROR:  timestamp9 out of range
+select '1677-09-21'::date::timestamp9;
+ERROR:  timestamp9 out of range
+select '1600-01-01'::date::timestamp9;
+ERROR:  timestamp9 out of range
+select 'infinity'::date::timestamp9;
+ERROR:  date out of range for timestamp
+select '-infinity'::date::timestamp9;
+ERROR:  date out of range for timestamp
+-- Interval arithmetic rejects overflow and preserves the nanosecond remainder.
+select '9223372036854775807'::timestamp9 + interval '1 day';
+ERROR:  timestamp9 out of range
+select '-9223372036854775808'::timestamp9 - interval '1 day';
+ERROR:  timestamp9 out of range
+select interval '1 day' + '9223372036854775807'::timestamp9;
+ERROR:  timestamp9 out of range
+select '9223372036854775807'::timestamp9 - interval '1 day';
+              ?column?               
+-------------------------------------
+ 2262-04-10 23:47:16.854775807 +0000
+(1 row)
+
+select '-9223372036854775808'::timestamp9 + interval '1 day';
+              ?column?               
+-------------------------------------
+ 1677-09-22 00:12:43.145224192 +0000
+(1 row)
+
+select interval '1 day' + '-9223372036854775808'::timestamp9;
+              ?column?               
+-------------------------------------
+ 1677-09-22 00:12:43.145224192 +0000
+(1 row)
+
+select '9223372036854775807'::timestamp9 + interval '0';
+              ?column?               
+-------------------------------------
+ 2262-04-11 23:47:16.854775807 +0000
+(1 row)
+
+select '-9223372036854775808'::timestamp9 - interval '0';
+              ?column?               
+-------------------------------------
+ 1677-09-21 00:12:43.145224192 +0000
+(1 row)
+
+-- The final remainder alone can overflow, even when the microseconds fit.
+select '808'::timestamp9 + interval '106751 days 23:47:16.854775';
+ERROR:  timestamp9 out of range
+select interval '106751 days 23:47:16.854775' + '808'::timestamp9;
+ERROR:  timestamp9 out of range
+select '-809'::timestamp9 - interval '106751 days 23:47:16.854775';
+ERROR:  timestamp9 out of range
+select '807'::timestamp9 + interval '106751 days 23:47:16.854775';
+              ?column?               
+-------------------------------------
+ 2262-04-11 23:47:16.854775807 +0000
+(1 row)
+
+select '-808'::timestamp9 - interval '106751 days 23:47:16.854775';
+              ?column?               
+-------------------------------------
+ 1677-09-21 00:12:43.145224192 +0000
+(1 row)
+
+-- A remainder of the opposite sign can bring the final result exactly into range.
+select '-193'::timestamp9 + interval '106751 days 23:47:16.854776';
+              ?column?               
+-------------------------------------
+ 2262-04-11 23:47:16.854775807 +0000
+(1 row)
+
+select '192'::timestamp9 - interval '106751 days 23:47:16.854776';
+              ?column?               
+-------------------------------------
+ 1677-09-21 00:12:43.145224192 +0000
+(1 row)
+
