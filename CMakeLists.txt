@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.4...3.5)
 
 configure_file("version.config" "version.config" COPYONLY)
 file(READ version.config VERSION_CONFIG)
